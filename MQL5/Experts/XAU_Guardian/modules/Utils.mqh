@@ -9,8 +9,9 @@
 //--- helper constants for persisted buffers
 #define GUARDIAN_MAX_RECENT_RESULTS 5
 
-struct GuardianPersistedState
+class GuardianPersistedState
   {
+public:
    datetime anchor_day;
    double   anchor_equity;
    bool     daily_lock;
