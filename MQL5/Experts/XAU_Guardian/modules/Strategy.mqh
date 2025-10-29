@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_STRATEGY_MQH
+#define XAU_GUARDIAN_STRATEGY_MQH
+
 #include <Trade/Trade.mqh>
 #include "Utils.mqh"
 #include "RiskManager.mqh"
@@ -811,3 +813,5 @@ public:
          m_calendar.Shutdown();
      }
   };
+
+#endif // XAU_GUARDIAN_STRATEGY_MQH

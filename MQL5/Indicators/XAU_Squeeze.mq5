@@ -74,7 +74,7 @@ int OnCalculate(const int rates_total,
    if(rates_total<=InpBollPeriod)
       return 0;
 
-   int start=MathMax(prev_calculated-1,InpBollPeriod);
+   int start=prev_calculated-1;
    if(start<InpBollPeriod)
       start=InpBollPeriod;
 

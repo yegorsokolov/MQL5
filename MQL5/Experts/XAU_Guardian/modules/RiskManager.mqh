@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_RISKMANAGER_MQH
+#define XAU_GUARDIAN_RISKMANAGER_MQH
+
 #include "Utils.mqh"
 
 class RiskManager
@@ -44,8 +46,8 @@ private:
          m_peakEquity=equity;
          if(m_state!=NULL)
            {
-            m_state.peak_equity=m_peakEquity;
-            m_state.peak_equity_day=today;
+            m_state->peak_equity=m_peakEquity;
+            m_state->peak_equity_day=today;
            }
          return;
         }
@@ -54,8 +56,8 @@ private:
          m_peakEquity=equity;
          if(m_state!=NULL)
            {
-            m_state.peak_equity=m_peakEquity;
-            m_state.peak_equity_day=today;
+            m_state->peak_equity=m_peakEquity;
+            m_state->peak_equity_day=today;
            }
         }
      }
@@ -63,16 +65,16 @@ private:
      {
       if(m_state==NULL)
          return;
-      m_state.peak_equity=m_peakEquity;
-      m_state.peak_equity_day=m_peakEquityDay;
+      m_state->peak_equity=m_peakEquity;
+      m_state->peak_equity_day=m_peakEquityDay;
      }
    void PersistEquityCurve()
      {
       if(m_state==NULL)
          return;
-      m_state.equity_curve_ema=m_equityEMA;
-      m_state.equity_curve_timestamp=m_lastEcsUpdate;
-      m_state.equity_curve_lock=m_equityCurveLock;
+      m_state->equity_curve_ema=m_equityEMA;
+      m_state->equity_curve_timestamp=m_lastEcsUpdate;
+      m_state->equity_curve_lock=m_equityCurveLock;
       GuardianStateStore::Save(*m_state);
      }
 
@@ -149,11 +151,11 @@ public:
          m_peakEquityDay=today;
          m_peakEquity=CurrentEquity();
         }
-      if(m_state.anchor_equity<=0.0)
-         m_state.anchor_equity=virtualBalance;
-      if(m_state.anchor_day==0)
-         m_state.anchor_day=GuardianUtils::BrokerDayStart(TimeCurrent());
-      m_lastAnchorCheck=m_state.anchor_day;
+      if(m_state->anchor_equity<=0.0)
+         m_state->anchor_equity=virtualBalance;
+      if(m_state->anchor_day==0)
+         m_state->anchor_day=GuardianUtils::BrokerDayStart(TimeCurrent());
+      m_lastAnchorCheck=m_state->anchor_day;
       if(m_ecsPeriodMinutes>0 && m_ecsThreshold>0.0)
          UpdateEquityCurve(true);
       return true;
@@ -167,15 +169,15 @@ public:
       m_lastAnchorCheck=today;
       if(m_state==NULL)
          return;
-      m_state.anchor_day=today;
-      m_state.anchor_equity=m_virtualBalance;
-      m_state.daily_lock=false;
-      if(m_state.cooldown_until>today)
-         m_state.cooldown_until=today;
+      m_state->anchor_day=today;
+      m_state->anchor_equity=m_virtualBalance;
+      m_state->daily_lock=false;
+      if(m_state->cooldown_until>today)
+         m_state->cooldown_until=today;
       m_peakEquityDay=today;
       m_peakEquity=CurrentEquity();
       PersistPeakEquity();
-      GuardianUtils::PrintInfo("Reset daily anchor to "+DoubleToString(m_state.anchor_equity,2));
+      GuardianUtils::PrintInfo("Reset daily anchor to "+DoubleToString(m_state->anchor_equity,2));
       GuardianStateStore::Save(*m_state);
      }
 
@@ -183,11 +185,11 @@ public:
      {
       if(m_state==NULL)
          return false;
-      if(m_state.daily_lock)
+      if(m_state->daily_lock)
          return true;
-      if(m_state.cooldown_until>TimeCurrent())
+      if(m_state->cooldown_until>TimeCurrent())
          return true;
-      if(m_state.soft_cooldown_bars>0)
+      if(m_state->soft_cooldown_bars>0)
          return true;
       if(m_ecsThreshold>0.0 && m_equityCurveLock)
          return true;
@@ -203,7 +205,7 @@ public:
      {
       if(m_state==NULL)
          return;
-      m_state.cooldown_until=TimeCurrent()+(m_cooldownMinutes*60);
+      m_state->cooldown_until=TimeCurrent()+(m_cooldownMinutes*60);
       GuardianStateStore::Save(*m_state);
       GuardianUtils::PrintInfo("Cooldown activated for "+IntegerToString(m_cooldownMinutes)+" minutes");
      }
@@ -217,15 +219,15 @@ public:
       m_peakEquityDay=today;
       m_peakEquity=CurrentEquity();
       PersistPeakEquity();
-      m_state.cooldown_until=nextDay;
-      m_state.daily_lock=true;
+      m_state->cooldown_until=nextDay;
+      m_state->daily_lock=true;
       GuardianStateStore::Save(*m_state);
       GuardianUtils::PrintInfo("Daily lock engaged until next session");
      }
 
    double TodaysPLVirtual() const
      {
-      datetime anchor=(m_state!=NULL && m_state.anchor_day>0)?m_state.anchor_day:GuardianUtils::BrokerDayStart(TimeCurrent());
+      datetime anchor=(m_state!=NULL && m_state->anchor_day>0)?m_state->anchor_day:GuardianUtils::BrokerDayStart(TimeCurrent());
       double closed=GuardianUtils::ClosedPLSince(m_symbol,m_magic,anchor);
       double floating=GuardianUtils::SumUnrealized(m_symbol,m_magic);
       return closed+floating;
@@ -279,9 +281,9 @@ public:
      {
       if(m_state==NULL)
          return;
-      if(m_state.smallest_lot<=0.0 || lot<m_state.smallest_lot)
+      if(m_state->smallest_lot<=0.0 || lot<m_state->smallest_lot)
         {
-         m_state.smallest_lot=lot;
+         m_state->smallest_lot=lot;
          GuardianStateStore::Save(*m_state);
         }
      }
@@ -306,9 +308,9 @@ public:
         }
       if(smallest==0.0)
          smallest=0.0;
-      if(MathAbs(smallest-m_state.smallest_lot)>0.00001)
+      if(MathAbs(smallest-m_state->smallest_lot)>0.00001)
         {
-         m_state.smallest_lot=smallest;
+         m_state->smallest_lot=smallest;
          GuardianStateStore::Save(*m_state);
         }
      }
@@ -328,25 +330,25 @@ public:
         }
       if(m_state!=NULL)
         {
-         m_state.smallest_lot=0.0;
-         m_state.soft_loss_streak=0;
-         m_state.soft_loss_sum=0.0;
+         m_state->smallest_lot=0.0;
+         m_state->soft_loss_streak=0;
+         m_state->soft_loss_sum=0.0;
          GuardianStateStore::Save(*m_state);
         }
      }
 
    double SessionMinLot(const double baseLot) const
      {
-      if(m_state==NULL || m_state.smallest_lot<=0.0)
+      if(m_state==NULL || m_state->smallest_lot<=0.0)
          return baseLot;
-      return m_state.smallest_lot;
+      return m_state->smallest_lot;
      }
 
    void ActivateSoftCooldown()
      {
       if(m_state==NULL || m_softCooldownBars<=0)
          return;
-      m_state.soft_cooldown_bars=m_softCooldownBars;
+      m_state->soft_cooldown_bars=m_softCooldownBars;
       GuardianStateStore::Save(*m_state);
       GuardianUtils::PrintInfo("Soft cooldown engaged for "
                                +IntegerToString(m_softCooldownBars)+" bars after loss streak");
@@ -358,23 +360,23 @@ public:
          return;
       if(profit<0.0)
         {
-         m_state.soft_loss_streak++;
-         m_state.soft_loss_sum+=MathAbs(profit)/m_virtualBalance;
-         if((m_lossStreakLimit>0 && m_state.soft_loss_streak>=m_lossStreakLimit) ||
-            (m_softDrawdownPct>0.0 && m_state.soft_loss_sum>=m_softDrawdownPct))
+         m_state->soft_loss_streak++;
+         m_state->soft_loss_sum+=MathAbs(profit)/m_virtualBalance;
+         if((m_lossStreakLimit>0 && m_state->soft_loss_streak>=m_lossStreakLimit) ||
+            (m_softDrawdownPct>0.0 && m_state->soft_loss_sum>=m_softDrawdownPct))
            {
             ActivateSoftCooldown();
-            m_state.soft_loss_streak=0;
-            m_state.soft_loss_sum=0.0;
+            m_state->soft_loss_streak=0;
+            m_state->soft_loss_sum=0.0;
            }
         }
       else
         {
-         m_state.soft_loss_streak=0;
+         m_state->soft_loss_streak=0;
          if(profit>0.0)
            {
             double recovery=MathAbs(profit)/m_virtualBalance;
-            m_state.soft_loss_sum=MathMax(0.0,m_state.soft_loss_sum-recovery);
+            m_state->soft_loss_sum=MathMax(0.0,m_state->soft_loss_sum-recovery);
            }
         }
       GuardianStateStore::Save(*m_state);
@@ -384,20 +386,20 @@ public:
      {
       if(m_state==NULL)
          return;
-      if(m_state.soft_cooldown_bars>0)
+      if(m_state->soft_cooldown_bars>0)
         {
-         m_state.soft_cooldown_bars--;
-         if(m_state.soft_cooldown_bars==0)
+         m_state->soft_cooldown_bars--;
+         if(m_state->soft_cooldown_bars==0)
            {
             bool reset=false;
-            if(m_state.soft_loss_sum>0.0)
+            if(m_state->soft_loss_sum>0.0)
               {
-               m_state.soft_loss_sum=0.0;
+               m_state->soft_loss_sum=0.0;
                reset=true;
               }
-            if(m_state.soft_loss_streak>0)
+            if(m_state->soft_loss_streak>0)
               {
-               m_state.soft_loss_streak=0;
+               m_state->soft_loss_streak=0;
                reset=true;
               }
             GuardianUtils::PrintDebug("Soft cooldown expired",m_debug);
@@ -412,24 +414,24 @@ public:
      {
       if(m_state==NULL)
          return 0.0;
-      if(m_state.cooldown_until<=TimeCurrent())
+      if(m_state->cooldown_until<=TimeCurrent())
          return 0.0;
-      return (m_state.cooldown_until-TimeCurrent())/60.0;
+      return (m_state->cooldown_until-TimeCurrent())/60.0;
      }
 
    bool DailyLockActive() const
      {
-      return (m_state!=NULL && m_state.daily_lock);
+      return (m_state!=NULL && m_state->daily_lock);
      }
 
    void OnTimer()
      {
       UpdateEquityCurve();
       RefreshDailyAnchor();
-      if(m_state!=NULL && m_state.cooldown_until<=TimeCurrent() && m_state.daily_lock &&
-         GuardianUtils::BrokerDayStart(TimeCurrent())>m_state.anchor_day)
+      if(m_state!=NULL && m_state->cooldown_until<=TimeCurrent() && m_state->daily_lock &&
+         GuardianUtils::BrokerDayStart(TimeCurrent())>m_state->anchor_day)
         {
-         m_state.daily_lock=false;
+         m_state->daily_lock=false;
          GuardianStateStore::Save(*m_state);
          GuardianUtils::PrintInfo("Daily lock cleared on new session");
         }
@@ -440,3 +442,5 @@ public:
       return (m_ecsThreshold>0.0 && m_equityCurveLock);
      }
   };
+
+#endif // XAU_GUARDIAN_RISKMANAGER_MQH

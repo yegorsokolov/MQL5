@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_NEWS_CALENDAR_NATIVE_MQH
+#define XAU_GUARDIAN_NEWS_CALENDAR_NATIVE_MQH
+
 #include "../Utils.mqh"
 
 class GuardianNewsCalendar
@@ -302,4 +304,6 @@ private:
       m_lastRefresh=0;
      }
   };
+
+#endif // XAU_GUARDIAN_NEWS_CALENDAR_NATIVE_MQH
 

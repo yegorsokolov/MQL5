@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_ANALYTICS_MQH
+#define XAU_GUARDIAN_ANALYTICS_MQH
+
 #include "Utils.mqh"
 
 struct GuardianTradeStats
@@ -84,3 +86,5 @@ public:
       GuardianUtils::AppendLog("positions.log",line);
      }
   };
+
+#endif // XAU_GUARDIAN_ANALYTICS_MQH
