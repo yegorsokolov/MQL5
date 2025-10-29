@@ -673,15 +673,23 @@ public:
       double rsiH1=m_indicators->RSI2(0);
       double close=m_indicators->Close(0);
       double vol=m_indicators->RealizedVolatility();
-      double atrValue=m_indicators->ATR(0);
-      double atrPoints=(atrValue>0.0)?atrValue/_Point:0.0;
+      double dailyLossLeft=m_risk->DailyLossLeftAmount();
+      if(dailyLossLeft<=0.0)
+        {
+         GuardianUtils::PrintDebug("Daily loss buffer exhausted",m_debug);
+         return;
+        }
+      double atrSmoothed=m_indicators->ATREWMA(0.06);
+      double atrRaw=m_indicators->ATR(0);
+      double atrEwmaPoints=(atrSmoothed>0.0?atrSmoothed:(atrRaw>0.0?atrRaw:0.0))/_Point;
+      double atrBaselinePoints=(atrRaw>0.0)?atrRaw/_Point:atrEwmaPoints;
 
       Regime regime=DetermineRegime(adx,vol);
       double slPoints=0.0;
       double tpPoints=0.0;
       bool longSignal=false;
       bool shortSignal=false;
-      ComputeSignals(regime,learnerProb,trend,adx,squeeze,squeezeBreak,rsiH1,close,atrPoints,
+      ComputeSignals(regime,learnerProb,trend,adx,squeeze,squeezeBreak,rsiH1,close,atrEwmaPoints,
                      slPoints,tpPoints,longSignal,shortSignal);
 
       if(!longSignal && !shortSignal)
@@ -706,7 +714,7 @@ public:
          return;
         }
 
-      double lot=m_positioning->ComputeNextLot(atrPoints,slPoints);
+      double lot=m_positioning->ComputeNextLot(atrBaselinePoints,slPoints,atrEwmaPoints,dailyLossLeft);
       if(lot<=0.0)
          return;
 

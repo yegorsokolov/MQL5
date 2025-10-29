@@ -10,6 +10,9 @@ private:
    ENUM_TIMEFRAMES  m_tf3;
    int              m_window;
    bool             m_debug;
+   double           m_atrEwma;
+   datetime         m_atrEwmaBar;
+   bool             m_atrEwmaInitialized;
 
    int m_handleATR;
    int m_handleATRKeltner;
@@ -37,6 +40,7 @@ private:
 
 public:
    IndicatorSuite():m_symbol(""),m_tf1(PERIOD_M15),m_tf2(PERIOD_H1),m_tf3(PERIOD_H4),m_window(120),m_debug(false),
+                    m_atrEwma(0.0),m_atrEwmaBar(0),m_atrEwmaInitialized(false),
                     m_handleATR(INVALID_HANDLE),m_handleATRKeltner(INVALID_HANDLE),m_handleRSI1(INVALID_HANDLE),
                     m_handleRSI2(INVALID_HANDLE),m_handleRSI3(INVALID_HANDLE),m_handleCCI(INVALID_HANDLE),
                     m_handleADX(INVALID_HANDLE),m_handleBands(INVALID_HANDLE),m_handleMAFast(INVALID_HANDLE),
@@ -54,6 +58,9 @@ public:
       m_tf3=tf3;
       m_window=window;
       m_debug=debug;
+      m_atrEwma=0.0;
+      m_atrEwmaBar=0;
+      m_atrEwmaInitialized=false;
       m_handleATR=iATR(symbol,tf1,14);
       m_handleATRKeltner=iATR(symbol,tf1,10);
       m_handleRSI1=iRSI(symbol,tf1,14,PRICE_CLOSE);
@@ -215,6 +222,27 @@ public:
       if(CopyBuffer(m_handleATR,0,shift,1,buf)<1)
          return 0.0;
       return buf[0];
+     }
+
+   double ATREWMA(const double lambda=0.06)
+     {
+      double atr=ATR(0);
+      if(atr<=0.0)
+         return (m_atrEwmaInitialized)?m_atrEwma:0.0;
+      double alpha=(lambda>0.0 && lambda<1.0)?lambda:0.06;
+      datetime barTime=iTime(m_symbol,m_tf1,0);
+      if(!m_atrEwmaInitialized)
+        {
+         m_atrEwma=atr;
+         m_atrEwmaInitialized=true;
+         m_atrEwmaBar=barTime;
+        }
+      else if(barTime!=m_atrEwmaBar)
+        {
+         m_atrEwma=alpha*atr+(1.0-alpha)*m_atrEwma;
+         m_atrEwmaBar=barTime;
+        }
+      return (m_atrEwma>0.0)?m_atrEwma:atr;
      }
 
    double ATRKeltner(const int shift) const
