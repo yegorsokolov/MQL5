@@ -77,7 +77,7 @@ int OnCalculate(const int rates_total,
    if(rates_total<=InpSlowMAPeriod)
       return 0;
 
-   int start=MathMax(prev_calculated-1,InpSlowMAPeriod);
+   int start=prev_calculated-1;
    if(start<InpSlowMAPeriod)
       start=InpSlowMAPeriod;
 

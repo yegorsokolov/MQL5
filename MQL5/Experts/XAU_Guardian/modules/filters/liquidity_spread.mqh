@@ -11,9 +11,9 @@ private:
    double m_minBookVolume;
    int    m_levels;
    bool   m_debug;
-   mutable bool   m_bookSubscribed;
+   bool   m_bookSubscribed;
 
-   bool EnsureBookSubscription() const
+   bool EnsureBookSubscription()
      {
       if(m_minBookVolume<=0.0)
          return true;
@@ -61,7 +61,7 @@ public:
       return (spread<=m_spreadLimit);
      }
 
-   bool IsLiquidityAcceptable() const
+   bool IsLiquidityAcceptable()
      {
       if(m_minBookVolume<=0.0)
          return true;
@@ -98,7 +98,7 @@ public:
       return (bidVolume>=m_minBookVolume && askVolume>=m_minBookVolume);
      }
 
-   bool Pass(double &spread) const
+   bool Pass(double &spread)
      {
       bool spreadOk=IsSpreadAcceptable(spread);
       bool liquidityOk=IsLiquidityAcceptable();
