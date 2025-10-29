@@ -22,9 +22,50 @@ private:
    double   m_ecsAlpha;
    bool     m_equityCurveLock;
    datetime m_lastEcsUpdate;
+   double   m_peakEquity;
+   datetime m_peakEquityDay;
 
    double FloatingThreshold() const { return m_virtualBalance*m_floatLimit; }
    double DailyThreshold() const { return m_virtualBalance*m_dailyLimit; }
+   double CurrentEquity() const
+     {
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      if(equity<=0.0)
+         equity=m_virtualBalance;
+      return equity;
+     }
+   void UpdatePeakEquity()
+     {
+      datetime today=GuardianUtils::BrokerDayStart(TimeCurrent());
+      double equity=CurrentEquity();
+      if(m_peakEquityDay!=today)
+        {
+         m_peakEquityDay=today;
+         m_peakEquity=equity;
+         if(m_state!=NULL)
+           {
+            m_state.peak_equity=m_peakEquity;
+            m_state.peak_equity_day=today;
+           }
+         return;
+        }
+      if(equity>m_peakEquity)
+        {
+         m_peakEquity=equity;
+         if(m_state!=NULL)
+           {
+            m_state.peak_equity=m_peakEquity;
+            m_state.peak_equity_day=today;
+           }
+        }
+     }
+   void PersistPeakEquity()
+     {
+      if(m_state==NULL)
+         return;
+      m_state.peak_equity=m_peakEquity;
+      m_state.peak_equity_day=m_peakEquityDay;
+     }
    void PersistEquityCurve()
      {
       if(m_state==NULL)
@@ -74,7 +115,7 @@ public:
                  m_cooldownMinutes(60),m_debug(false),m_state(NULL),m_lastAnchorCheck(0),
                  m_lossStreakLimit(0),m_softDrawdownPct(0.0),m_softCooldownBars(0),
                  m_ecsThreshold(0.0),m_ecsPeriodMinutes(0),m_equityEMA(0.0),m_ecsAlpha(0.0),
-                 m_equityCurveLock(false),m_lastEcsUpdate(0)
+                 m_equityCurveLock(false),m_lastEcsUpdate(0),m_peakEquity(0.0),m_peakEquityDay(0)
      {
      }
 
@@ -100,6 +141,14 @@ public:
       m_lastEcsUpdate=state.equity_curve_timestamp;
       m_equityCurveLock=state.equity_curve_lock;
       m_ecsAlpha=(m_ecsPeriodMinutes>0)?(2.0/((double)m_ecsPeriodMinutes+1.0)):0.0;
+      datetime today=GuardianUtils::BrokerDayStart(TimeCurrent());
+      m_peakEquityDay=(state.peak_equity_day>0)?state.peak_equity_day:today;
+      m_peakEquity=(state.peak_equity>0.0)?state.peak_equity:CurrentEquity();
+      if(m_peakEquityDay!=today)
+        {
+         m_peakEquityDay=today;
+         m_peakEquity=CurrentEquity();
+        }
       if(m_state.anchor_equity<=0.0)
          m_state.anchor_equity=virtualBalance;
       if(m_state.anchor_day==0)
@@ -123,6 +172,9 @@ public:
       m_state.daily_lock=false;
       if(m_state.cooldown_until>today)
          m_state.cooldown_until=today;
+      m_peakEquityDay=today;
+      m_peakEquity=CurrentEquity();
+      PersistPeakEquity();
       GuardianUtils::PrintInfo("Reset daily anchor to "+DoubleToString(m_state.anchor_equity,2));
       GuardianStateStore::Save(*m_state);
      }
@@ -161,6 +213,10 @@ public:
       if(m_state==NULL)
          return;
       datetime nextDay=GuardianUtils::BrokerDayStart(TimeCurrent()+86400);
+      datetime today=GuardianUtils::BrokerDayStart(TimeCurrent());
+      m_peakEquityDay=today;
+      m_peakEquity=CurrentEquity();
+      PersistPeakEquity();
       m_state.cooldown_until=nextDay;
       m_state.daily_lock=true;
       GuardianStateStore::Save(*m_state);
@@ -175,16 +231,29 @@ public:
       return closed+floating;
      }
 
+   double DailyLossLeftAmount() const
+     {
+      double threshold=DailyThreshold();
+      if(threshold<=0.0)
+         return m_virtualBalance;
+      double todaysPL=TodaysPLVirtual();
+      double used=MathMax(0.0,-todaysPL);
+      return MathMax(0.0,threshold-used);
+     }
+
    bool CheckFloatingDDAndAct(CTrade &trade)
      {
-      double floating=GuardianUtils::SumUnrealized(m_symbol,m_magic);
-      double limit=-FloatingThreshold();
-      if(floating<=limit)
+      UpdatePeakEquity();
+      double equity=CurrentEquity();
+      double drawdown=m_peakEquity-equity;
+      double limit=FloatingThreshold();
+      if(drawdown>=limit && limit>0.0)
         {
-         GuardianUtils::PrintInfo("Floating DD breach: "+DoubleToString(floating,2)+" <= "
+         GuardianUtils::PrintInfo("Equity DD breach: "+DoubleToString(drawdown,2)+" >= "
                                   +DoubleToString(limit,2));
          GuardianUtils::CloseAll(trade,m_symbol,m_magic);
-         ForceCooldown();
+         PersistPeakEquity();
+         ForceDailyLock();
          return true;
         }
       return false;
@@ -192,6 +261,7 @@ public:
 
    bool CheckDailyDDAndAct(CTrade &trade)
      {
+      UpdatePeakEquity();
       double todaysPL=TodaysPLVirtual();
       double limit=-DailyThreshold();
       if(todaysPL<=limit)

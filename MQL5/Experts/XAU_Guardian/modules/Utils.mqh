@@ -30,6 +30,8 @@ struct GuardianPersistedState
    double   equity_curve_ema;
    datetime equity_curve_timestamp;
    bool     equity_curve_lock;
+   double   peak_equity;
+   datetime peak_equity_day;
   };
 
 class GuardianUtils
@@ -322,6 +324,8 @@ public:
       state.equity_curve_ema=0.0;
       state.equity_curve_timestamp=0;
       state.equity_curve_lock=false;
+      state.peak_equity=0.0;
+      state.peak_equity_day=0;
       string text;
       if(!GuardianUtils::LoadText(GuardianUtils::StateFile(),text))
          return false;
@@ -421,6 +425,12 @@ public:
       value=GuardianUtils::ExtractValue(text,"equity_curve_lock");
       if(StringLen(value)>0)
          state.equity_curve_lock=(StringCompare(value,"true",false)==0 || value=="1");
+      value=GuardianUtils::ExtractValue(text,"peak_equity");
+      if(StringLen(value)>0)
+         state.peak_equity=StringToDouble(value);
+      value=GuardianUtils::ExtractValue(text,"peak_equity_day");
+      if(StringLen(value)>0)
+         state.peak_equity_day=(datetime)StringToInteger(value);
       return true;
      }
 
@@ -473,7 +483,9 @@ public:
       text+=StringFormat("  \"soft_cooldown_bars\": %d,\n",state.soft_cooldown_bars);
       text+=StringFormat("  \"equity_curve_ema\": %.2f,\n",state.equity_curve_ema);
       text+=StringFormat("  \"equity_curve_timestamp\": %I64d,\n",(long)state.equity_curve_timestamp);
-      text+=StringFormat("  \"equity_curve_lock\": %s\n",state.equity_curve_lock?"true":"false");
+      text+=StringFormat("  \"equity_curve_lock\": %s,\n",state.equity_curve_lock?"true":"false");
+      text+=StringFormat("  \"peak_equity\": %.2f,\n",state.peak_equity);
+      text+=StringFormat("  \"peak_equity_day\": %I64d\n",(long)state.peak_equity_day);
       text+="}\n";
       return GuardianUtils::SaveText(GuardianUtils::StateFile(),text);
      }
