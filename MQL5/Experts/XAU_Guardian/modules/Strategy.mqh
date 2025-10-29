@@ -7,6 +7,8 @@
 #include "OnlineLearner.mqh"
 #include "Trailing.mqh"
 #include "Analytics.mqh"
+#include "news/calendar_native.mqh"
+#include "filters/liquidity_spread.mqh"
 
 class StrategyEngine
   {
@@ -81,6 +83,10 @@ private:
    string  m_manualNewsFile;
    datetime m_newsStarts[];
    datetime m_newsEnds[];
+   GuardianNewsCalendar m_calendar;
+   int     m_newsLookaheadMinutes;
+   datetime m_manualNewsTimestamp;
+   bool    m_manualNewsMissingLogged;
 
    // trailing extras
    double  m_beTriggerATR;
@@ -95,6 +101,12 @@ private:
 
    ulong   m_guardTickets[];
    int     m_guardCounts[];
+   LiquiditySpreadFilter m_liquidityFilter;
+   double  m_minBookVolume;
+   int     m_bookDepthLevels;
+   int     m_maxTradesPerHour;
+   int     m_minMinutesBetweenTrades;
+   datetime m_recentEntries[];
 
    bool ParseMinutesOverride(const string text,int &minutes) const
      {
@@ -171,6 +183,46 @@ private:
         }
      }
 
+   void PruneRecentEntries(const datetime now)
+     {
+      int total=ArraySize(m_recentEntries);
+      int keep=0;
+      for(int i=0;i<total;++i)
+        {
+         if(now-m_recentEntries[i]<=3600)
+           {
+            m_recentEntries[keep]=m_recentEntries[i];
+            keep++;
+           }
+        }
+      ArrayResize(m_recentEntries,keep);
+     }
+
+   bool TradeDensityAllows(const datetime now)
+     {
+      if(m_maxTradesPerHour<=0 && m_minMinutesBetweenTrades<=0)
+         return true;
+      PruneRecentEntries(now);
+      int total=ArraySize(m_recentEntries);
+      if(m_maxTradesPerHour>0 && total>=m_maxTradesPerHour)
+         return false;
+      if(m_minMinutesBetweenTrades>0 && total>0)
+        {
+         datetime last=m_recentEntries[total-1];
+         if((now-last)<(m_minMinutesBetweenTrades*60))
+            return false;
+        }
+      return true;
+     }
+
+   void RegisterTradeTimestamp(const datetime now)
+     {
+      PruneRecentEntries(now);
+      int size=ArraySize(m_recentEntries);
+      ArrayResize(m_recentEntries,size+1);
+      m_recentEntries[size]=now;
+     }
+
    bool MarginCheck(const ENUM_ORDER_TYPE type,const double lot,const double price,const double sl) const
      {
       double margin=0.0;
@@ -194,13 +246,19 @@ private:
    bool NewsBlocked(const datetime time) const
      {
       if(m_newsFreezeMinutes<=0)
+        {
+         if(m_useNewsCalendar && m_calendar.IsBlocked(time))
+            return true;
          return false;
+        }
       int total=ArraySize(m_newsStarts);
       for(int i=0;i<total;++i)
         {
          if(time>=m_newsStarts[i] && time<=m_newsEnds[i])
             return true;
         }
+      if(m_useNewsCalendar && m_calendar.IsBlocked(time))
+         return true;
       return false;
      }
 
@@ -218,18 +276,47 @@ private:
 
    void LoadManualNewsWindows()
      {
-      ArrayResize(m_newsStarts,0);
-      ArrayResize(m_newsEnds,0);
       if(StringLen(m_manualNewsFile)==0 || m_newsFreezeMinutes<=0)
+        {
+         m_manualNewsTimestamp=0;
+         ArrayResize(m_newsStarts,0);
+         ArrayResize(m_newsEnds,0);
          return;
+        }
+
       string path=GuardianUtils::FilesRoot()+m_manualNewsFile;
+      if(!GuardianUtils::FileExists(path))
+        {
+         if(!m_manualNewsMissingLogged)
+            GuardianUtils::PrintDebug("Manual news file not found: "+m_manualNewsFile+
+                                      ". See ManualNewsExample.csv for the expected format.",m_debug);
+         m_manualNewsMissingLogged=true;
+         m_manualNewsTimestamp=0;
+         ArrayResize(m_newsStarts,0);
+         ArrayResize(m_newsEnds,0);
+         return;
+        }
+
+      datetime modified=GuardianUtils::FileModifiedTime(path);
+      if(modified>0 && m_manualNewsTimestamp>0 && modified==m_manualNewsTimestamp && ArraySize(m_newsStarts)>0)
+         return;
+
       string text;
       if(!GuardianUtils::LoadText(path,text))
         {
-         GuardianUtils::PrintDebug("Manual news file not found: "+m_manualNewsFile+
-                                   ". See ManualNewsExample.csv for the expected format.",m_debug);
+         if(!m_manualNewsMissingLogged)
+            GuardianUtils::PrintDebug("Manual news file not readable: "+m_manualNewsFile+", check permissions.",m_debug);
+         m_manualNewsMissingLogged=true;
+         m_manualNewsTimestamp=0;
+         ArrayResize(m_newsStarts,0);
+         ArrayResize(m_newsEnds,0);
          return;
         }
+
+      m_manualNewsMissingLogged=false;
+      m_manualNewsTimestamp=modified;
+      ArrayResize(m_newsStarts,0);
+      ArrayResize(m_newsEnds,0);
       string lines[];
       int count=StringSplit(text,'\n',lines);
       for(int i=0;i<count;++i)
@@ -297,12 +384,10 @@ private:
       return REGIME_MEAN;
      }
 
-   void ComputeSignals(const Regime regime,const double learnerProb,const double trend,const double adx,
+  void ComputeSignals(const Regime regime,const double learnerProb,const double trend,const double adx,
                        const bool squeeze,const double squeezeBreak,const double rsiH1,const double close,
-                       double &slPoints,double &tpPoints,bool &longSignal,bool &shortSignal)
-     {
-      double atr= m_indicators->ATR(0);
-      double atrPoints=(atr>0.0)?atr/_Point:0.0;
+                       const double atrPoints,double &slPoints,double &tpPoints,bool &longSignal,bool &shortSignal)
+    {
       longSignal=false;
       shortSignal=false;
       slPoints=m_fixedSL;
@@ -415,13 +500,16 @@ public:
                     m_atrTrendSL(0.0),m_atrTrendTP(0.0),m_atrMRSL(0.0),m_atrMRTP(0.0),m_regimeMode(MODE_AUTO),
                     m_minLearnerExit(0.4),m_exitConfirmBars(2),m_adxFloor(15.0),m_londonNYOnly(false),m_londonStart(7),
                     m_londonEnd(17),m_nyStart(13),m_nyEnd(22),m_newsFreezeMinutes(0),m_useNewsCalendar(false),
-                    m_beTriggerATR(0.0),m_beOffsetPoints(0.0),m_chandelierATR(0.0),m_chandelierPeriod(20),
-                    m_maxBarsInTrade(0),m_givebackPct(0.0),m_maxPositionsPerSide(1),m_maxRetries(0)
+                    m_newsLookaheadMinutes(720),m_beTriggerATR(0.0),m_beOffsetPoints(0.0),m_chandelierATR(0.0),
+                    m_chandelierPeriod(20),m_maxBarsInTrade(0),m_givebackPct(0.0),m_maxPositionsPerSide(1),
+                    m_maxRetries(0),m_minBookVolume(0.0),m_bookDepthLevels(0),m_maxTradesPerHour(0),
+                    m_minMinutesBetweenTrades(0)
      {
       ArrayResize(m_newsStarts,0);
       ArrayResize(m_newsEnds,0);
       ArrayResize(m_guardTickets,0);
       ArrayResize(m_guardCounts,0);
+      ArrayResize(m_recentEntries,0);
      }
 
    bool Init(const string symbol,CTrade &trade,RiskManager &risk,Positioning &positioning,
@@ -435,9 +523,11 @@ public:
              const double atrMRSL,const double atrMRTP,const int regimeMode,const double minLearnerExit,
              const int exitConfirmBars,const double adxFloor,const bool londonNYOnly,const int londonStart,
              const int londonEnd,const int nyStart,const int nyEnd,const int newsFreezeMinutes,
-             const bool useNewsCalendar,const string manualNewsFile,const int maxPositionsPerSide,
+             const bool useNewsCalendar,const string manualNewsFile,const int newsLookaheadMinutes,
+             const double minBookVolume,const int bookDepthLevels,const int maxPositionsPerSide,
              const double beTriggerATR,const double beOffsetPoints,const double chandelierATR,const int chandelierPeriod,
-             const int maxBarsInTrade,const double givebackPct,const int maxRetries)
+             const int maxBarsInTrade,const double givebackPct,const int maxRetries,
+             const int maxTradesPerHour,const int minMinutesBetweenTrades)
      {
       m_symbol=symbol;
       m_trade=&trade;
@@ -486,6 +576,9 @@ public:
       m_newsFreezeMinutes=newsFreezeMinutes;
       m_useNewsCalendar=useNewsCalendar;
       m_manualNewsFile=manualNewsFile;
+      m_newsLookaheadMinutes=MathMax(60,newsLookaheadMinutes);
+      m_manualNewsTimestamp=0;
+      m_manualNewsMissingLogged=false;
       m_maxPositionsPerSide=MathMax(1,maxPositionsPerSide);
       m_beTriggerATR=beTriggerATR;
       m_beOffsetPoints=beOffsetPoints;
@@ -494,6 +587,20 @@ public:
       m_maxBarsInTrade=maxBarsInTrade;
       m_givebackPct=givebackPct;
       m_maxRetries=MathMax(0,maxRetries);
+      m_minBookVolume=MathMax(0.0,minBookVolume);
+      m_bookDepthLevels=MathMax(0,bookDepthLevels);
+      m_maxTradesPerHour=MathMax(0,maxTradesPerHour);
+      m_minMinutesBetweenTrades=MathMax(0,minMinutesBetweenTrades);
+      ArrayResize(m_recentEntries,0);
+      m_liquidityFilter.Init(symbol,spreadLimit,m_minBookVolume,m_bookDepthLevels,m_debug);
+      if(m_useNewsCalendar)
+        {
+         int freezeMinutes=(m_newsFreezeMinutes>0)?m_newsFreezeMinutes:6;
+         int padding=MathMax(1,freezeMinutes);
+         m_calendar.Init(symbol,padding,padding,m_newsLookaheadMinutes,m_debug);
+         m_calendar.SetImportanceThreshold(CALENDAR_IMPORTANCE_HIGH);
+         m_calendar.Refresh(true);
+        }
       LoadManualNewsWindows();
       m_lastBarTime=0;
       return true;
@@ -536,10 +643,22 @@ public:
          GuardianUtils::PrintDebug("Entry blocked by session/news filter",m_debug);
          return;
         }
-      double spread=GuardianUtils::SpreadPoints(m_symbol);
-      if(spread>m_spreadLimit)
+      double spread=0.0;
+      if(!m_liquidityFilter.IsSpreadAcceptable(spread))
         {
          GuardianUtils::PrintDebug("Spread too high: "+DoubleToString(spread,1),m_debug);
+         return;
+        }
+      if(!m_liquidityFilter.IsLiquidityAcceptable())
+        {
+         GuardianUtils::PrintDebug("Liquidity filter blocked entry",m_debug);
+         return;
+        }
+
+      datetime now=TimeCurrent();
+      if(!TradeDensityAllows(now))
+        {
+         GuardianUtils::PrintDebug("Trade density guard active",m_debug);
          return;
         }
 
@@ -554,13 +673,15 @@ public:
       double rsiH1=m_indicators->RSI2(0);
       double close=m_indicators->Close(0);
       double vol=m_indicators->RealizedVolatility();
+      double atrValue=m_indicators->ATR(0);
+      double atrPoints=(atrValue>0.0)?atrValue/_Point:0.0;
 
       Regime regime=DetermineRegime(adx,vol);
       double slPoints=0.0;
       double tpPoints=0.0;
       bool longSignal=false;
       bool shortSignal=false;
-      ComputeSignals(regime,learnerProb,trend,adx,squeeze,squeezeBreak,rsiH1,close,
+      ComputeSignals(regime,learnerProb,trend,adx,squeeze,squeezeBreak,rsiH1,close,atrPoints,
                      slPoints,tpPoints,longSignal,shortSignal);
 
       if(!longSignal && !shortSignal)
@@ -585,7 +706,7 @@ public:
          return;
         }
 
-      double lot=m_positioning->ComputeNextLot();
+      double lot=m_positioning->ComputeNextLot(atrPoints,slPoints);
       if(lot<=0.0)
          return;
 
@@ -634,6 +755,7 @@ public:
          m_positioning->RegisterExecutedLot(lot);
          m_risk->RegisterExecutedLot(lot);
          m_analytics->SnapshotPositions();
+         RegisterTradeTimestamp(TimeCurrent());
          GuardianUtils::AppendLog("orders.log",
             StringFormat("%s %s %.2f",TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
                          direction>0?"BUY":"SELL",lot));
@@ -665,5 +787,19 @@ public:
       if(m_risk!=NULL)
          m_risk->OnBar();
       m_lastBarTime=barTime;
+     }
+
+   void OnTimer()
+     {
+      if(m_useNewsCalendar)
+         m_calendar.Refresh(false);
+      LoadManualNewsWindows();
+     }
+
+   void Shutdown()
+     {
+      m_liquidityFilter.Shutdown();
+      if(m_useNewsCalendar)
+         m_calendar.Shutdown();
      }
   };
