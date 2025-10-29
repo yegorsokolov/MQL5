@@ -27,6 +27,9 @@ struct GuardianPersistedState
    int      soft_loss_streak;
    double   soft_loss_sum;
    int      soft_cooldown_bars;
+   double   equity_curve_ema;
+   datetime equity_curve_timestamp;
+   bool     equity_curve_lock;
   };
 
 class GuardianUtils
@@ -76,6 +79,21 @@ public:
       FileWriteString(handle,line+"\r\n");
       FileClose(handle);
       return true;
+     }
+
+   static bool FileExists(const string path)
+     {
+      return FileIsExist(path);
+     }
+
+   static datetime FileModifiedTime(const string path)
+     {
+      int handle=FileOpen(path,FILE_READ|FILE_BIN|FILE_SHARE_READ);
+      if(handle==INVALID_HANDLE)
+         return 0;
+      datetime modified=(datetime)FileGetInteger(handle,FILE_MODIFY_DATE);
+      FileClose(handle);
+      return modified;
      }
 
    static bool LoadText(const string path,string &out)
@@ -301,6 +319,9 @@ public:
       state.soft_loss_streak=0;
       state.soft_loss_sum=0.0;
       state.soft_cooldown_bars=0;
+      state.equity_curve_ema=0.0;
+      state.equity_curve_timestamp=0;
+      state.equity_curve_lock=false;
       string text;
       if(!GuardianUtils::LoadText(GuardianUtils::StateFile(),text))
          return false;
@@ -391,6 +412,15 @@ public:
       value=GuardianUtils::ExtractValue(text,"soft_cooldown_bars");
       if(StringLen(value)>0)
          state.soft_cooldown_bars=(int)StringToInteger(value);
+      value=GuardianUtils::ExtractValue(text,"equity_curve_ema");
+      if(StringLen(value)>0)
+         state.equity_curve_ema=StringToDouble(value);
+      value=GuardianUtils::ExtractValue(text,"equity_curve_timestamp");
+      if(StringLen(value)>0)
+         state.equity_curve_timestamp=(datetime)StringToInteger(value);
+      value=GuardianUtils::ExtractValue(text,"equity_curve_lock");
+      if(StringLen(value)>0)
+         state.equity_curve_lock=(StringCompare(value,"true",false)==0 || value=="1");
       return true;
      }
 
@@ -440,7 +470,10 @@ public:
       text+=StringFormat("  \"snapshot_timestamp\": %I64d,\n",(long)state.snapshot_timestamp);
       text+=StringFormat("  \"soft_loss_streak\": %d,\n",state.soft_loss_streak);
       text+=StringFormat("  \"soft_loss_sum\": %.8f,\n",state.soft_loss_sum);
-      text+=StringFormat("  \"soft_cooldown_bars\": %d\n",state.soft_cooldown_bars);
+      text+=StringFormat("  \"soft_cooldown_bars\": %d,\n",state.soft_cooldown_bars);
+      text+=StringFormat("  \"equity_curve_ema\": %.2f,\n",state.equity_curve_ema);
+      text+=StringFormat("  \"equity_curve_timestamp\": %I64d,\n",(long)state.equity_curve_timestamp);
+      text+=StringFormat("  \"equity_curve_lock\": %s\n",state.equity_curve_lock?"true":"false");
       text+="}\n";
       return GuardianUtils::SaveText(GuardianUtils::StateFile(),text);
      }

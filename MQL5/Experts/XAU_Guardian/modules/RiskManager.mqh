@@ -16,20 +16,72 @@ private:
    int      m_lossStreakLimit;
    double   m_softDrawdownPct;
    int      m_softCooldownBars;
+   double   m_ecsThreshold;
+   int      m_ecsPeriodMinutes;
+   double   m_equityEMA;
+   double   m_ecsAlpha;
+   bool     m_equityCurveLock;
+   datetime m_lastEcsUpdate;
 
    double FloatingThreshold() const { return m_virtualBalance*m_floatLimit; }
    double DailyThreshold() const { return m_virtualBalance*m_dailyLimit; }
+   void PersistEquityCurve()
+     {
+      if(m_state==NULL)
+         return;
+      m_state.equity_curve_ema=m_equityEMA;
+      m_state.equity_curve_timestamp=m_lastEcsUpdate;
+      m_state.equity_curve_lock=m_equityCurveLock;
+      GuardianStateStore::Save(*m_state);
+     }
+
+   void UpdateEquityCurve(const bool force=false)
+     {
+      if(m_ecsPeriodMinutes<=0 || m_ecsThreshold<=0.0)
+         return;
+      datetime now=TimeCurrent();
+      if(!force && m_lastEcsUpdate!=0 && (now-m_lastEcsUpdate)<60)
+         return;
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      if(equity<=0.0)
+         equity=m_virtualBalance;
+      if(m_equityEMA<=0.0 || force)
+         m_equityEMA=equity;
+      else
+        {
+         double alpha=(m_ecsAlpha>0.0)?m_ecsAlpha:(2.0/(m_ecsPeriodMinutes+1.0));
+         m_equityEMA=alpha*equity+(1.0-alpha)*m_equityEMA;
+        }
+      m_lastEcsUpdate=now;
+      bool prevLock=m_equityCurveLock;
+      double lockLevel=m_equityEMA*(1.0-m_ecsThreshold);
+      if(equity<lockLevel)
+         m_equityCurveLock=true;
+      else if(m_equityCurveLock && equity>=m_equityEMA)
+         m_equityCurveLock=false;
+      if(prevLock!=m_equityCurveLock)
+        {
+         if(m_equityCurveLock)
+            GuardianUtils::PrintInfo("Equity curve lock engaged - pausing entries");
+         else
+            GuardianUtils::PrintInfo("Equity curve lock released");
+        }
+      PersistEquityCurve();
+     }
 
 public:
    RiskManager():m_symbol(""),m_magic(0),m_virtualBalance(0.0),m_floatLimit(0.0),m_dailyLimit(0.0),
                  m_cooldownMinutes(60),m_debug(false),m_state(NULL),m_lastAnchorCheck(0),
-                 m_lossStreakLimit(0),m_softDrawdownPct(0.0),m_softCooldownBars(0)
+                 m_lossStreakLimit(0),m_softDrawdownPct(0.0),m_softCooldownBars(0),
+                 m_ecsThreshold(0.0),m_ecsPeriodMinutes(0),m_equityEMA(0.0),m_ecsAlpha(0.0),
+                 m_equityCurveLock(false),m_lastEcsUpdate(0)
      {
      }
 
    bool Init(GuardianPersistedState &state,const string symbol,const int magic,const double virtualBalance,
              const double floatingLimit,const double dailyLimit,const int cooldownMinutes,const bool debug,
-             const int lossStreakLimit,const double softDrawdownPct,const int softCooldownBars)
+             const int lossStreakLimit,const double softDrawdownPct,const int softCooldownBars,
+             const double ecsThreshold,const int ecsPeriodMinutes)
      {
       m_symbol=symbol;
       m_magic=magic;
@@ -42,11 +94,19 @@ public:
       m_lossStreakLimit=lossStreakLimit;
       m_softDrawdownPct=softDrawdownPct;
       m_softCooldownBars=softCooldownBars;
+      m_ecsThreshold=MathMax(0.0,ecsThreshold);
+      m_ecsPeriodMinutes=MathMax(0,ecsPeriodMinutes);
+      m_equityEMA=(state.equity_curve_ema>0.0)?state.equity_curve_ema:virtualBalance;
+      m_lastEcsUpdate=state.equity_curve_timestamp;
+      m_equityCurveLock=state.equity_curve_lock;
+      m_ecsAlpha=(m_ecsPeriodMinutes>0)?(2.0/((double)m_ecsPeriodMinutes+1.0)):0.0;
       if(m_state.anchor_equity<=0.0)
          m_state.anchor_equity=virtualBalance;
       if(m_state.anchor_day==0)
          m_state.anchor_day=GuardianUtils::BrokerDayStart(TimeCurrent());
       m_lastAnchorCheck=m_state.anchor_day;
+      if(m_ecsPeriodMinutes>0 && m_ecsThreshold>0.0)
+         UpdateEquityCurve(true);
       return true;
      }
 
@@ -76,6 +136,8 @@ public:
       if(m_state.cooldown_until>TimeCurrent())
          return true;
       if(m_state.soft_cooldown_bars>0)
+         return true;
+      if(m_ecsThreshold>0.0 && m_equityCurveLock)
          return true;
       return false;
      }
@@ -292,6 +354,7 @@ public:
 
    void OnTimer()
      {
+      UpdateEquityCurve();
       RefreshDailyAnchor();
       if(m_state!=NULL && m_state.cooldown_until<=TimeCurrent() && m_state.daily_lock &&
          GuardianUtils::BrokerDayStart(TimeCurrent())>m_state.anchor_day)
@@ -300,5 +363,10 @@ public:
          GuardianStateStore::Save(*m_state);
          GuardianUtils::PrintInfo("Daily lock cleared on new session");
         }
+     }
+
+   bool EquityCurveLockActive() const
+     {
+      return (m_ecsThreshold>0.0 && m_equityCurveLock);
      }
   };

@@ -59,8 +59,12 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
   - Trade results, floating P/L snapshots, and executed orders append to `logs/` under the EA files directory for quick audits.
 - **Soft brakes & sessions**
   - Configurable soft loss streak guard (`Inp_LossStreakLimit` + `Inp_SoftDrawdownPct`) that triggers a bar-based cooldown.
-  - Optional London/NY session gating and manual news freeze windows (`Inp_ManualNewsFile` + `Inp_NewsFreezeMinutes`).
+  - Optional London/NY session gating, a native MetaTrader economic-calendar freeze (`Inp_UseCalendar`, ±`Inp_NewsFreezeMinutes`, `Inp_NewsLookaheadMinutes`), and manual override windows (`Inp_ManualNewsFile`).
+  - Liquidity/volatility guardrails: spread + order-book depth (`Inp_MinBookVolume`, `Inp_BookDepthLevels`) and trade-density throttles (`Inp_MaxTradesPerHour`, `Inp_MinMinutesBetweenTrades`).
+  - Equity-curve EMA watchdog (driven by `Inp_ECS_Drawdown` / `Inp_ECS_PeriodMinutes`) pauses entries when equity underperforms the rolling baseline.
   - Strict lot-ratio enforcement now runs each tick—external manual trades outside the 1.9× envelope get flattened automatically.
+- **Position sizing**
+  - Baseline lot handling still respects session history, with an optional ATR-driven risk fraction (`Inp_RiskPerTrade`) that backs into lot size using the current stop.
 
 ## Inputs overview
 
@@ -69,6 +73,7 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
 | `Inp_VirtualBalance` | Risk model balance used for DD caps. |
 | `Inp_FloatingDD_Limit` / `Inp_DailyDD_Limit` | Fractional drawdown limits. |
 | `Inp_BaseLot`, `Inp_MaxLotMultiplier` | Session base lot and max ratio constraint. |
+| `Inp_RiskPerTrade` | Optional fractional risk per trade (0 disables ATR-based sizing). |
 | `Inp_TP_Points`, `Inp_SL_Points` | Initial TP/SL in points. |
 | `Inp_TrailStartPoints`, `Inp_TrailStepPoints` | Profit threshold and trail step for the two-sided trailing logic. |
 | `Inp_CooldownMinutes` | Minutes to block entries after floating DD breach. |
@@ -84,11 +89,16 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
 | `Inp_RegimeMode` | Force Trend, Mean, or Auto regime selection. |
 | `Inp_MinLearnerProbExit`, `Inp_ExitConfirmBars`, `Inp_ADX_Floor` | Direction flip guard sensitivity. |
 | `Inp_LondonNYOnly` + session hours | Allow entries only inside London/NY windows. |
-| `Inp_NewsFreezeMinutes`, `Inp_ManualNewsFile` | Block trading around scheduled manual news windows. |
+| `Inp_NewsFreezeMinutes`, `Inp_ManualNewsFile` | Block trading around scheduled manual news windows and set the ±minutes for native calendar freezes. |
+| `Inp_UseCalendar`, `Inp_NewsLookaheadMinutes` | Toggle the built-in economic-calendar feed and horizon (minutes) to prefetch events. |
+| `Inp_MinBookVolume`, `Inp_BookDepthLevels` | Minimum bid/ask volume (lots) and depth levels required for entries. |
+| `Inp_MaxPositionsPerSide` | Maximum concurrent positions per direction. |
 | `Inp_BE_Trigger_ATR`, `Inp_BE_Offset_Points` | Break-even hop configuration. |
 | `Inp_Chandelier_ATR`, `Inp_Chandelier_Period` | Chandelier stop parameters. |
 | `Inp_MaxBarsInTrade`, `Inp_GivebackPct` | Time-stop and MFE give-back exit controls. |
+| `Inp_MaxTradesPerHour`, `Inp_MinMinutesBetweenTrades` | Trade-density throttle to prevent clustering. |
 | `Inp_LossStreakLimit`, `Inp_SoftDrawdownPct`, `Inp_SoftCooldownBars` | Soft drawdown brake settings. |
+| `Inp_ECS_PeriodMinutes`, `Inp_ECS_Drawdown` | Equity-curve EMA watchdog sensitivity and threshold (percentage). |
 | `Inp_L2Lambda`, `Inp_LearnDecay`, `Inp_SnapshotBars` | Online learner regularisation/decay/snapshot cadence. |
 | `Inp_DebugLogs` | Enables verbose Print logs for diagnostics. |
 
@@ -116,6 +126,9 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
 - The online learner updates once per completed bar on `Inp_TF1`. Consider lowering `Inp_LearnRate` if deploying to live capital.
 - Manual news freeze windows are read from `Inp_ManualNewsFile` inside `MQL5/Files/XAU_Guardian/`. Each non-empty line accepts
   `YYYY.MM.DD HH:MM` in broker time with an optional `,custom_minutes` override (see `ManualNewsExample.csv`). When the override
-  is omitted the EA falls back to `Inp_NewsFreezeMinutes` for the block duration.
+  is omitted the EA falls back to `Inp_NewsFreezeMinutes` for the block duration, and the file is reloaded every timer pulse so
+  intraday edits take effect without reattaching the EA.
+- Recommended deployment timeframe: **M5** (preset logic remains stable on M1–M15 with minor tuning).
+- Ensure the **MetaTrader 5 Economic Calendar** is enabled (Tools → Options → Community) so native news filters populate, especially on VPS instances.
 
 Happy guarding!

@@ -10,14 +10,17 @@ private:
    double   m_maxMultiplier;
    bool     m_debug;
    GuardianPersistedState *m_state;
+   double   m_virtualBalance;
+   double   m_riskFraction;
 
 public:
-   Positioning():m_symbol(""),m_magic(0),m_baseLot(0.1),m_maxMultiplier(1.9),m_debug(false),m_state(NULL)
+   Positioning():m_symbol(""),m_magic(0),m_baseLot(0.1),m_maxMultiplier(1.9),m_debug(false),m_state(NULL),
+                  m_virtualBalance(0.0),m_riskFraction(0.0)
      {
      }
 
    bool Init(GuardianPersistedState &state,const string symbol,const int magic,const double baseLot,
-             const double maxMultiplier,const bool debug)
+             const double maxMultiplier,const bool debug,const double virtualBalance,const double riskFraction)
      {
       m_symbol=symbol;
       m_magic=magic;
@@ -25,10 +28,12 @@ public:
       m_maxMultiplier=maxMultiplier;
       m_debug=debug;
       m_state=&state;
+      m_virtualBalance=virtualBalance;
+      m_riskFraction=MathMax(0.0,riskFraction);
       return true;
      }
 
-   double ComputeNextLot()
+   double ComputeNextLot(const double atrPoints,const double slPoints)
      {
       double minLot=0.0,maxLot=0.0,step=0.0;
       SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_MIN,minLot);
@@ -41,6 +46,27 @@ public:
       if(m_state!=NULL && m_state.smallest_lot>0.0)
          lot=MathMin(lot,m_state.smallest_lot*m_maxMultiplier);
       lot=GuardianUtils::NormalizeLot(step,MathMax(minLot,m_baseLot),maxLot,lot);
+
+      if(m_riskFraction>0.0 && m_virtualBalance>0.0 && atrPoints>0.0)
+        {
+         double pointsRisk=(slPoints>0.0)?slPoints:atrPoints;
+         double tickValue=0.0;
+         double tickSize=0.0;
+         SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_VALUE,tickValue);
+         SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_SIZE,tickSize);
+         if(tickValue>0.0 && tickSize>0.0 && pointsRisk>0.0)
+           {
+            double pointValue=tickValue/tickSize;
+            double riskAmount=m_virtualBalance*m_riskFraction;
+            if(pointValue>0.0 && riskAmount>0.0)
+              {
+               double riskLot=riskAmount/(pointsRisk*pointValue);
+               riskLot=GuardianUtils::NormalizeLot(step,MathMax(minLot,m_baseLot),maxLot,riskLot);
+               if(riskLot>0.0)
+                  lot=MathMin(lot,riskLot);
+              }
+           }
+        }
       return lot;
      }
 

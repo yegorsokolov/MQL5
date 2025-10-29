@@ -18,6 +18,7 @@ input double Inp_FloatingDD_Limit    = 0.009;
 input double Inp_DailyDD_Limit       = 0.0385;
 input double Inp_BaseLot             = 0.10;
 input double Inp_MaxLotMultiplier    = 1.9;
+input double Inp_RiskPerTrade        = 0.0;
 input int    Inp_Magic               = 46015;
 input bool   Inp_AllowLongs          = true;
 input bool   Inp_AllowShorts         = true;
@@ -64,8 +65,12 @@ input int    Inp_LondonStartHour     = 7;
 input int    Inp_LondonEndHour       = 17;
 input int    Inp_NYStartHour         = 13;
 input int    Inp_NYEndHour           = 22;
-input int    Inp_NewsFreezeMinutes   = 0;
+input int    Inp_NewsFreezeMinutes   = 6;
+input bool   Inp_UseCalendar         = true;
+input int    Inp_NewsLookaheadMinutes= 720;
 input string Inp_ManualNewsFile      = "";
+input double Inp_MinBookVolume       = 20.0;
+input int    Inp_BookDepthLevels     = 3;
 input int    Inp_MaxPositionsPerSide = 1;
 input double Inp_BE_Trigger_ATR      = 1.0;
 input double Inp_BE_Offset_Points    = 50.0;
@@ -74,9 +79,13 @@ input int    Inp_Chandelier_Period   = 22;
 input int    Inp_MaxBarsInTrade      = 0;
 input double Inp_GivebackPct         = 0.35;
 input int    Inp_MaxRetries          = 1;
+input int    Inp_MaxTradesPerHour    = 3;
+input int    Inp_MinMinutesBetweenTrades = 5;
 input int    Inp_LossStreakLimit     = 3;
 input double Inp_SoftDrawdownPct     = 0.02;
 input int    Inp_SoftCooldownBars    = 5;
+input int    Inp_ECS_PeriodMinutes   = 240;
+input double Inp_ECS_Drawdown        = 1.5;
 input double Inp_L2Lambda            = 0.0005;
 input double Inp_LearnDecay          = 0.0001;
 input int    Inp_SnapshotBars        = 20;
@@ -110,9 +119,11 @@ int OnInit()
    g_trade.SetTypeFillingBySymbol(_Symbol);
    g_trade.SetDeviationInPoints(Inp_SlippagePoints);
    if(!g_risk.Init(g_state,_Symbol,Inp_Magic,Inp_VirtualBalance,Inp_FloatingDD_Limit,Inp_DailyDD_Limit,
-                   Inp_CooldownMinutes,Inp_DebugLogs,Inp_LossStreakLimit,Inp_SoftDrawdownPct,Inp_SoftCooldownBars))
+                   Inp_CooldownMinutes,Inp_DebugLogs,Inp_LossStreakLimit,Inp_SoftDrawdownPct,Inp_SoftCooldownBars,
+                   Inp_ECS_Drawdown/100.0,Inp_ECS_PeriodMinutes))
       return INIT_FAILED;
-   g_positioning.Init(g_state,_Symbol,Inp_Magic,Inp_BaseLot,Inp_MaxLotMultiplier,Inp_DebugLogs);
+   g_positioning.Init(g_state,_Symbol,Inp_Magic,Inp_BaseLot,Inp_MaxLotMultiplier,Inp_DebugLogs,
+                      Inp_VirtualBalance,Inp_RiskPerTrade);
    if(!g_indicators.Init(_Symbol,Inp_TF1,Inp_TF2,Inp_TF3,Inp_FeatureWindow,Inp_DebugLogs))
       return INIT_FAILED;
    g_trailing.Init(_Symbol,Inp_Magic,Inp_DebugLogs);
@@ -131,9 +142,11 @@ int OnInit()
                    Inp_RSI_MR_Buy,Inp_RSI_MR_Sell,Inp_ATR_SL_Trend,Inp_ATR_TP_Trend,
                    Inp_ATR_SL_MR,Inp_ATR_TP_MR,(int)Inp_RegimeMode,Inp_MinLearnerProbExit,
                    Inp_ExitConfirmBars,Inp_ADX_Floor,Inp_LondonNYOnly,Inp_LondonStartHour,Inp_LondonEndHour,
-                   Inp_NYStartHour,Inp_NYEndHour,Inp_NewsFreezeMinutes,false,Inp_ManualNewsFile,
-                   Inp_MaxPositionsPerSide,Inp_BE_Trigger_ATR,Inp_BE_Offset_Points,Inp_Chandelier_ATR,
-                   Inp_Chandelier_Period,Inp_MaxBarsInTrade,Inp_GivebackPct,Inp_MaxRetries);
+                   Inp_NYStartHour,Inp_NYEndHour,Inp_NewsFreezeMinutes,Inp_UseCalendar,Inp_ManualNewsFile,
+                   Inp_NewsLookaheadMinutes,Inp_MinBookVolume,Inp_BookDepthLevels,Inp_MaxPositionsPerSide,
+                   Inp_BE_Trigger_ATR,Inp_BE_Offset_Points,Inp_Chandelier_ATR,Inp_Chandelier_Period,
+                   Inp_MaxBarsInTrade,Inp_GivebackPct,Inp_MaxRetries,Inp_MaxTradesPerHour,
+                   Inp_MinMinutesBetweenTrades);
 
    EventSetTimer(60);
    GuardianUtils::PrintInfo("XAU_Guardian initialized");
@@ -143,6 +156,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    EventKillTimer();
+   g_strategy.Shutdown();
    g_indicators.Shutdown();
    GuardianStateStore::Save(g_state);
   }
@@ -162,6 +176,7 @@ void OnTick()
 void OnTimer()
   {
    g_risk.OnTimer();
+   g_strategy.OnTimer();
    g_strategy.UpdateLearner();
    g_analytics.SnapshotPositions();
   }
