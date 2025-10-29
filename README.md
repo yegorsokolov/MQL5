@@ -38,21 +38,29 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
 - **No hedging** and lot-ratio discipline: the largest active position may not exceed `Inp_MaxLotMultiplier` × the smallest open lot (default multiplier 1.9).
 - **Session controls**: optional night-session block, automatic next-day unlock, and spread guard.
 - **Signal stack**
-  - Built-in indicators (ATR, RSI multi-timeframe, CCI, ADX, Bollinger Bands, EMA slope).
+  - Built-in indicators (ATR, RSI multi-timeframe, CCI, ADX, Bollinger Bands, EMA slope, Donchian/Keltner/SuperTrend proxies).
+  - Regime-aware logic that auto-switches between a trend-following breakout stack (Donchian/Keltner + TVF bias) and a mean-reversion
+    stack (Bollinger fades with RSI filters). Thresholds can be forced via `Inp_RegimeMode`.
   - Custom indicators:
     - `XAU_TVF.mq5` exposes a normalised trend score and volatility pressure blend.
     - `XAU_Squeeze.mq5` flags squeeze conditions and outputs a breakout bias.
   - All readings are transformed into a 14-feature vector for the strategy and learner.
 - **Execution flow**
-  - Every order carries TP/SL and feeds into a symmetric trailing manager once profit exceeds `Inp_TrailStartPoints`.
-  - Trailing also softens adverse moves using ATR-derived caps when enabled.
+  - Every order carries TP/SL and feeds into an expanded trailing manager: break-even hop (`Inp_BE_Trigger_ATR` + `Inp_BE_Offset_Points`),
+    chandelier stop, time-stop (`Inp_MaxBarsInTrade`), and MFE give-back exits (`Inp_GivebackPct`).
+  - Trailing still respects the original symmetric steps and optional ATR adverse cap.
   - Risk checks run on every tick, timer pulse, and trade transaction.
 - **Online learner**
-  - Pure MQL5 logistic regression updated per completed bar (default timeframe `Inp_TF1`).
+  - Pure MQL5 logistic regression updated per completed bar (default timeframe `Inp_TF1`) with optional L2 regularisation and learning-rate decay.
+  - Automatic snapshots (`Inp_SnapshotBars`) and rollback after loss clusters (3-of-5 default).
   - Weights plus bias persist to `MQL5/Files/XAU_Guardian/state.json` so MetaQuotes VPS migrations keep the adaptive signal.
   - Set `Inp_UseOnlineLearning=false` to freeze the learner (weights stay but stop updating).
 - **Analytics & logging**
   - Trade results, floating P/L snapshots, and executed orders append to `logs/` under the EA files directory for quick audits.
+- **Soft brakes & sessions**
+  - Configurable soft loss streak guard (`Inp_LossStreakLimit` + `Inp_SoftDrawdownPct`) that triggers a bar-based cooldown.
+  - Optional London/NY session gating and manual news freeze windows (`Inp_ManualNewsFile` + `Inp_NewsFreezeMinutes`).
+  - Strict lot-ratio enforcement now runs each tick—external manual trades outside the 1.9× envelope get flattened automatically.
 
 ## Inputs overview
 
@@ -70,6 +78,18 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
 | `Inp_TF1`, `Inp_TF2`, `Inp_TF3`, `Inp_FeatureWindow` | Feature timeframe mix and lookback. |
 | `Inp_UseOnlineLearning`, `Inp_LearnRate`, `Inp_MinLearnerProb` | Online learner controls. |
 | `Inp_AdverseATRF` | ATR multiple for adverse trailing soft-stop (0 disables). |
+| `Inp_ADX_Trend` / `Inp_ADX_MR` / `Inp_ADX_Regime` | Regime filters for the trend and mean-reversion stacks plus auto-switch threshold. |
+| `Inp_RSI_MR_Buy` / `Inp_RSI_MR_Sell` | RSI triggers for mean-reversion entries. |
+| `Inp_ATR_*` inputs | ATR-based SL/TP multipliers for each regime. |
+| `Inp_RegimeMode` | Force Trend, Mean, or Auto regime selection. |
+| `Inp_MinLearnerProbExit`, `Inp_ExitConfirmBars`, `Inp_ADX_Floor` | Direction flip guard sensitivity. |
+| `Inp_LondonNYOnly` + session hours | Allow entries only inside London/NY windows. |
+| `Inp_NewsFreezeMinutes`, `Inp_ManualNewsFile` | Block trading around scheduled manual news windows. |
+| `Inp_BE_Trigger_ATR`, `Inp_BE_Offset_Points` | Break-even hop configuration. |
+| `Inp_Chandelier_ATR`, `Inp_Chandelier_Period` | Chandelier stop parameters. |
+| `Inp_MaxBarsInTrade`, `Inp_GivebackPct` | Time-stop and MFE give-back exit controls. |
+| `Inp_LossStreakLimit`, `Inp_SoftDrawdownPct`, `Inp_SoftCooldownBars` | Soft drawdown brake settings. |
+| `Inp_L2Lambda`, `Inp_LearnDecay`, `Inp_SnapshotBars` | Online learner regularisation/decay/snapshot cadence. |
 | `Inp_DebugLogs` | Enables verbose Print logs for diagnostics. |
 
 ## Operation & lifecycle
@@ -94,5 +114,8 @@ Place the folders inside your terminal's **MQL5** data directory and compile the
 - The EA closes and blocks trading immediately upon risk-limit breaches—manual intervention is rarely required.
 - All persistence uses simple JSON in `state.json`; deleting the file resets session lot floors, locks, and learner weights.
 - The online learner updates once per completed bar on `Inp_TF1`. Consider lowering `Inp_LearnRate` if deploying to live capital.
+- Manual news freeze windows are read from `Inp_ManualNewsFile` inside `MQL5/Files/XAU_Guardian/`. Each non-empty line accepts
+  `YYYY.MM.DD HH:MM` in broker time with an optional `,custom_minutes` override (see `ManualNewsExample.csv`). When the override
+  is omitted the EA falls back to `Inp_NewsFreezeMinutes` for the block duration.
 
 Happy guarding!

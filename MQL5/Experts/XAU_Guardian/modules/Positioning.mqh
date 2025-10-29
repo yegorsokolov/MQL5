@@ -95,7 +95,40 @@ public:
          ENUM_POSITION_TYPE type=(ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
          if((dir>0 && type==POSITION_TYPE_BUY) || (dir<0 && type==POSITION_TYPE_SELL))
             count++;
-        }
+      }
       return count;
+     }
+
+   void EnforceLotRatio(CTrade &trade)
+     {
+      double smallest=0.0;
+      double largest=0.0;
+      ulong largestTicket=0;
+      for(int i=PositionsTotal()-1;i>=0;--i)
+        {
+         ulong ticket=PositionGetTicket(i);
+         if(!PositionSelectByTicket(ticket))
+            continue;
+         if(PositionGetString(POSITION_SYMBOL)!=m_symbol)
+            continue;
+         if(m_magic>0 && (int)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+            continue;
+         double lot=PositionGetDouble(POSITION_VOLUME);
+         if(smallest==0.0 || lot<smallest)
+            smallest=lot;
+         if(lot>largest)
+           {
+            largest=lot;
+            largestTicket=ticket;
+           }
+        }
+      if(smallest<=0.0 || largest<=0.0)
+         return;
+      if(largest>smallest*m_maxMultiplier+0.000001)
+        {
+         GuardianUtils::PrintInfo("Lot ratio breach detected; closing ticket "+IntegerToString((int)largestTicket));
+         if(!trade.PositionClose(largestTicket))
+            GuardianUtils::PrintDebug("Failed to enforce lot ratio",m_debug);
+        }
      }
   };

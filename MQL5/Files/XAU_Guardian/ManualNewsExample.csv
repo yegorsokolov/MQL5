@@ -1,0 +1,7 @@
+# Manual news freeze windows for XAU Guardian
+# Format: YYYY.MM.DD HH:MM[,custom_minutes]
+# Entries are interpreted in broker server time.
+# Example: block 45 minutes around Nonfarm Payrolls release
+2024.03.08 15:30,45
+# Example: use default Inp_NewsFreezeMinutes duration
+2024.03.20 18:00
