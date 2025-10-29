@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_TRAILING_MQH
+#define XAU_GUARDIAN_TRAILING_MQH
+
 #include "Utils.mqh"
 
 class TrailingManager
@@ -229,3 +231,5 @@ public:
         }
      }
   };
+
+#endif // XAU_GUARDIAN_TRAILING_MQH

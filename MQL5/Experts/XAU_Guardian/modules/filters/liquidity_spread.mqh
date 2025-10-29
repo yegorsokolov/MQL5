@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_FILTERS_LIQUIDITY_SPREAD_MQH
+#define XAU_GUARDIAN_FILTERS_LIQUIDITY_SPREAD_MQH
+
 #include "../Utils.mqh"
 
 class LiquiditySpreadFilter
@@ -112,4 +114,6 @@ public:
         }
      }
   };
+
+#endif // XAU_GUARDIAN_FILTERS_LIQUIDITY_SPREAD_MQH
 

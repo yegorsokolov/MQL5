@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_UTILS_MQH
+#define XAU_GUARDIAN_UTILS_MQH
+
 #include <Trade/Trade.mqh>
 
 #define GUARDIAN_MAX_FEATURES 32
@@ -490,3 +492,5 @@ public:
       return GuardianUtils::SaveText(GuardianUtils::StateFile(),text);
      }
   };
+
+#endif // XAU_GUARDIAN_UTILS_MQH

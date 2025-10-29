@@ -1,4 +1,6 @@
-#pragma once
+#ifndef XAU_GUARDIAN_INDICATORS_MQH
+#define XAU_GUARDIAN_INDICATORS_MQH
+
 #include "Utils.mqh"
 
 class IndicatorSuite
@@ -468,3 +470,5 @@ public:
    ENUM_TIMEFRAMES SecondaryTimeframe() const { return m_tf2; }
    const string &Symbol() const { return m_symbol; }
   };
+
+#endif // XAU_GUARDIAN_INDICATORS_MQH
