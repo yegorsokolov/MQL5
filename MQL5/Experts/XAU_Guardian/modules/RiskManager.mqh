@@ -13,18 +13,23 @@ private:
    bool     m_debug;
    GuardianPersistedState *m_state;
    datetime m_lastAnchorCheck;
+   int      m_lossStreakLimit;
+   double   m_softDrawdownPct;
+   int      m_softCooldownBars;
 
    double FloatingThreshold() const { return m_virtualBalance*m_floatLimit; }
    double DailyThreshold() const { return m_virtualBalance*m_dailyLimit; }
 
 public:
    RiskManager():m_symbol(""),m_magic(0),m_virtualBalance(0.0),m_floatLimit(0.0),m_dailyLimit(0.0),
-                 m_cooldownMinutes(60),m_debug(false),m_state(NULL),m_lastAnchorCheck(0)
+                 m_cooldownMinutes(60),m_debug(false),m_state(NULL),m_lastAnchorCheck(0),
+                 m_lossStreakLimit(0),m_softDrawdownPct(0.0),m_softCooldownBars(0)
      {
      }
 
    bool Init(GuardianPersistedState &state,const string symbol,const int magic,const double virtualBalance,
-             const double floatingLimit,const double dailyLimit,const int cooldownMinutes,const bool debug)
+             const double floatingLimit,const double dailyLimit,const int cooldownMinutes,const bool debug,
+             const int lossStreakLimit,const double softDrawdownPct,const int softCooldownBars)
      {
       m_symbol=symbol;
       m_magic=magic;
@@ -34,6 +39,9 @@ public:
       m_cooldownMinutes=cooldownMinutes;
       m_debug=debug;
       m_state=&state;
+      m_lossStreakLimit=lossStreakLimit;
+      m_softDrawdownPct=softDrawdownPct;
+      m_softCooldownBars=softCooldownBars;
       if(m_state.anchor_equity<=0.0)
          m_state.anchor_equity=virtualBalance;
       if(m_state.anchor_day==0)
@@ -66,6 +74,8 @@ public:
       if(m_state.daily_lock)
          return true;
       if(m_state.cooldown_until>TimeCurrent())
+         return true;
+      if(m_state.soft_cooldown_bars>0)
          return true;
       return false;
      }
@@ -187,6 +197,8 @@ public:
       if(m_state!=NULL)
         {
          m_state.smallest_lot=0.0;
+         m_state.soft_loss_streak=0;
+         m_state.soft_loss_sum=0.0;
          GuardianStateStore::Save(*m_state);
         }
      }
@@ -196,6 +208,72 @@ public:
       if(m_state==NULL || m_state.smallest_lot<=0.0)
          return baseLot;
       return m_state.smallest_lot;
+     }
+
+   void ActivateSoftCooldown()
+     {
+      if(m_state==NULL || m_softCooldownBars<=0)
+         return;
+      m_state.soft_cooldown_bars=m_softCooldownBars;
+      GuardianStateStore::Save(*m_state);
+      GuardianUtils::PrintInfo("Soft cooldown engaged for "
+                               +IntegerToString(m_softCooldownBars)+" bars after loss streak");
+     }
+
+   void OnTradeClosed(const double profit)
+     {
+      if(m_state==NULL)
+         return;
+      if(profit<0.0)
+        {
+         m_state.soft_loss_streak++;
+         m_state.soft_loss_sum+=MathAbs(profit)/m_virtualBalance;
+         if((m_lossStreakLimit>0 && m_state.soft_loss_streak>=m_lossStreakLimit) ||
+            (m_softDrawdownPct>0.0 && m_state.soft_loss_sum>=m_softDrawdownPct))
+           {
+            ActivateSoftCooldown();
+            m_state.soft_loss_streak=0;
+            m_state.soft_loss_sum=0.0;
+           }
+        }
+      else
+        {
+         m_state.soft_loss_streak=0;
+         if(profit>0.0)
+           {
+            double recovery=MathAbs(profit)/m_virtualBalance;
+            m_state.soft_loss_sum=MathMax(0.0,m_state.soft_loss_sum-recovery);
+           }
+        }
+      GuardianStateStore::Save(*m_state);
+     }
+
+   void OnBar()
+     {
+      if(m_state==NULL)
+         return;
+      if(m_state.soft_cooldown_bars>0)
+        {
+         m_state.soft_cooldown_bars--;
+         if(m_state.soft_cooldown_bars==0)
+           {
+            bool reset=false;
+            if(m_state.soft_loss_sum>0.0)
+              {
+               m_state.soft_loss_sum=0.0;
+               reset=true;
+              }
+            if(m_state.soft_loss_streak>0)
+              {
+               m_state.soft_loss_streak=0;
+               reset=true;
+              }
+            GuardianUtils::PrintDebug("Soft cooldown expired",m_debug);
+            if(reset)
+               GuardianUtils::PrintDebug("Soft-loss counters reset after cooldown",m_debug);
+           }
+         GuardianStateStore::Save(*m_state);
+        }
      }
 
    double CooldownMinutesRemaining() const

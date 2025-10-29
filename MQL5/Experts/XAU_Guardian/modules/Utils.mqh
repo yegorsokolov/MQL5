@@ -4,6 +4,9 @@
 #define GUARDIAN_MAX_FEATURES 32
 #define GUARDIAN_FEATURE_COUNT 14
 
+//--- helper constants for persisted buffers
+#define GUARDIAN_MAX_RECENT_RESULTS 5
+
 struct GuardianPersistedState
   {
    datetime anchor_day;
@@ -15,6 +18,15 @@ struct GuardianPersistedState
    double   weights[GUARDIAN_MAX_FEATURES];
    double   bias;
    datetime weights_timestamp;
+   int      feature_updates;
+   double   feature_means[GUARDIAN_MAX_FEATURES];
+   double   feature_vars[GUARDIAN_MAX_FEATURES];
+   double   snapshot_weights[GUARDIAN_MAX_FEATURES];
+   double   snapshot_bias;
+   datetime snapshot_timestamp;
+   int      soft_loss_streak;
+   double   soft_loss_sum;
+   int      soft_cooldown_bars;
   };
 
 class GuardianUtils
@@ -40,6 +52,7 @@ public:
       bool ok=true;
       ok &= FolderCreate(FilesRoot());
       ok &= FolderCreate(LogsRoot());
+      ok &= FolderCreate(FilesRoot()+"presets/");
       return ok;
      }
 
@@ -279,6 +292,15 @@ public:
       ArrayInitialize(state.weights,0.0);
       state.bias=0.0;
       state.weights_timestamp=0;
+      state.feature_updates=0;
+      ArrayInitialize(state.feature_means,0.0);
+      ArrayInitialize(state.feature_vars,0.0);
+      ArrayInitialize(state.snapshot_weights,0.0);
+      state.snapshot_bias=0.0;
+      state.snapshot_timestamp=0;
+      state.soft_loss_streak=0;
+      state.soft_loss_sum=0.0;
+      state.soft_cooldown_bars=0;
       string text;
       if(!GuardianUtils::LoadText(GuardianUtils::StateFile(),text))
          return false;
@@ -298,12 +320,6 @@ public:
       value=GuardianUtils::ExtractValue(text,"smallest_lot");
       if(StringLen(value)>0)
          state.smallest_lot=StringToDouble(value);
-      value=GuardianUtils::ExtractValue(text,"bias");
-      if(StringLen(value)>0)
-         state.bias=StringToDouble(value);
-      value=GuardianUtils::ExtractValue(text,"weights_timestamp");
-      if(StringLen(value)>0)
-         state.weights_timestamp=(datetime)StringToInteger(value);
       value=GuardianUtils::ExtractValue(text,"weights_count");
       if(StringLen(value)>0)
          state.weights_count=MathMin((int)StringToInteger(value),GUARDIAN_MAX_FEATURES);
@@ -318,6 +334,63 @@ public:
          for(int i=0;i<limit;++i)
             state.weights[i]=StringToDouble(parts[i]);
         }
+      value=GuardianUtils::ExtractValue(text,"bias");
+      if(StringLen(value)>0)
+         state.bias=StringToDouble(value);
+      value=GuardianUtils::ExtractValue(text,"weights_timestamp");
+      if(StringLen(value)>0)
+         state.weights_timestamp=(datetime)StringToInteger(value);
+      value=GuardianUtils::ExtractValue(text,"feature_updates");
+      if(StringLen(value)>0)
+         state.feature_updates=(int)StringToInteger(value);
+      value=GuardianUtils::ExtractValue(text,"feature_means");
+      if(StringLen(value)>0 && StringGetCharacter(value,0)=='[')
+        {
+         string arr=StringSubstr(value,1,StringLen(value)-2);
+         StringReplace(arr," ","");
+         string parts[];
+         int n=StringSplit(arr,',',parts);
+         int limit=MathMin(n,state.weights_count);
+         for(int i=0;i<limit;++i)
+            state.feature_means[i]=StringToDouble(parts[i]);
+        }
+      value=GuardianUtils::ExtractValue(text,"feature_vars");
+      if(StringLen(value)>0 && StringGetCharacter(value,0)=='[')
+        {
+         string arr=StringSubstr(value,1,StringLen(value)-2);
+         StringReplace(arr," ","");
+         string parts[];
+         int n=StringSplit(arr,',',parts);
+         int limit=MathMin(n,state.weights_count);
+         for(int i=0;i<limit;++i)
+            state.feature_vars[i]=StringToDouble(parts[i]);
+        }
+      value=GuardianUtils::ExtractValue(text,"snapshot_weights");
+      if(StringLen(value)>0 && StringGetCharacter(value,0)=='[')
+        {
+         string arr=StringSubstr(value,1,StringLen(value)-2);
+         StringReplace(arr," ","");
+         string parts[];
+         int n=StringSplit(arr,',',parts);
+         int limit=MathMin(n,state.weights_count);
+         for(int i=0;i<limit;++i)
+            state.snapshot_weights[i]=StringToDouble(parts[i]);
+        }
+      value=GuardianUtils::ExtractValue(text,"snapshot_bias");
+      if(StringLen(value)>0)
+         state.snapshot_bias=StringToDouble(value);
+      value=GuardianUtils::ExtractValue(text,"snapshot_timestamp");
+      if(StringLen(value)>0)
+         state.snapshot_timestamp=(datetime)StringToInteger(value);
+      value=GuardianUtils::ExtractValue(text,"soft_loss_streak");
+      if(StringLen(value)>0)
+         state.soft_loss_streak=(int)StringToInteger(value);
+      value=GuardianUtils::ExtractValue(text,"soft_loss_sum");
+      if(StringLen(value)>0)
+         state.soft_loss_sum=StringToDouble(value);
+      value=GuardianUtils::ExtractValue(text,"soft_cooldown_bars");
+      if(StringLen(value)>0)
+         state.soft_cooldown_bars=(int)StringToInteger(value);
       return true;
      }
 
@@ -340,7 +413,34 @@ public:
         }
       text+="],\n";
       text+=StringFormat("  \"bias\": %.8f,\n",state.bias);
-      text+=StringFormat("  \"weights_timestamp\": %I64d\n",(long)state.weights_timestamp);
+      text+=StringFormat("  \"weights_timestamp\": %I64d,\n",(long)state.weights_timestamp);
+      text+=StringFormat("  \"feature_updates\": %d,\n",state.feature_updates);
+      text+="  \"feature_means\": [";
+      for(int i=0;i<state.weights_count;++i)
+        {
+         if(i>0) text+=", ";
+         text+=DoubleToString(state.feature_means[i],8);
+        }
+      text+="],\n";
+      text+="  \"feature_vars\": [";
+      for(int i=0;i<state.weights_count;++i)
+        {
+         if(i>0) text+=", ";
+         text+=DoubleToString(state.feature_vars[i],8);
+        }
+      text+="],\n";
+      text+="  \"snapshot_weights\": [";
+      for(int i=0;i<state.weights_count;++i)
+        {
+         if(i>0) text+=", ";
+         text+=DoubleToString(state.snapshot_weights[i],8);
+        }
+      text+="],\n";
+      text+=StringFormat("  \"snapshot_bias\": %.8f,\n",state.snapshot_bias);
+      text+=StringFormat("  \"snapshot_timestamp\": %I64d,\n",(long)state.snapshot_timestamp);
+      text+=StringFormat("  \"soft_loss_streak\": %d,\n",state.soft_loss_streak);
+      text+=StringFormat("  \"soft_loss_sum\": %.8f,\n",state.soft_loss_sum);
+      text+=StringFormat("  \"soft_cooldown_bars\": %d\n",state.soft_cooldown_bars);
       text+="}\n";
       return GuardianUtils::SaveText(GuardianUtils::StateFile(),text);
      }
