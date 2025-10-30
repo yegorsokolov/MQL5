@@ -13,6 +13,39 @@
 #include "news/calendar_native.mqh"
 #include "filters/liquidity_spread.mqh"
 
+class OnlineLearnerHandle
+  {
+private:
+   OnlineLearner *m_ptr;
+
+public:
+   OnlineLearnerHandle():m_ptr(NULL){}
+
+   void Bind(OnlineLearner &learner)
+     {
+      m_ptr=&learner;
+     }
+
+   bool IsReady() const
+     {
+      return(m_ptr!=NULL);
+     }
+
+   double Score(const double &features[]) const
+     {
+      if(m_ptr==NULL)
+         return 0.5;
+      return m_ptr->Score(features);
+     }
+
+   void Update(const double &features[],const double label)
+     {
+      if(m_ptr==NULL)
+         return;
+      m_ptr->Update(features,label);
+     }
+  };
+
 class StrategyEngine
   {
 private:
@@ -27,7 +60,7 @@ private:
    RiskManager     *m_risk;
    Positioning     *m_positioning;
    IndicatorSuite  *m_indicators;
-   OnlineLearner   *m_learner;
+   OnlineLearnerHandle m_learner;
    TrailingManager *m_trailing;
    Analytics       *m_analytics;
 
@@ -475,7 +508,7 @@ public:
        m_risk(NULL),
        m_positioning(NULL),
        m_indicators(NULL),
-       m_learner(NULL),
+       m_learner(),
        m_trailing(NULL),
        m_analytics(NULL),
        m_debug(false),
@@ -566,7 +599,7 @@ public:
       m_risk        = &risk;
       m_positioning = &positioning;
       m_indicators  = &indicators;
-      m_learner     = &learner;
+      m_learner.Bind(learner);
       m_trailing    = &trailing;
       m_analytics   = &analytics;
 
@@ -653,7 +686,7 @@ public:
    // --- Manage open positions (trailing + flip guard)
    void ManagePositions(CTrade &trade_ref)
      {
-      if(m_indicators==NULL || m_learner==NULL || m_positioning==NULL || m_trailing==NULL)
+      if(m_indicators==NULL || !m_learner.IsReady() || m_positioning==NULL || m_trailing==NULL)
          return;
 
       double features[];
@@ -664,7 +697,7 @@ public:
 
       if(m_indicators->BuildFeatureVector(0,features))
         {
-         learnerProb = m_learner->Score(features);
+         learnerProb = m_learner.Score(features);
          trend       = m_indicators->TrendScore(0);
          emaSlope    = m_indicators->EMASlopeTF2();
          adx         = m_indicators->ADX(0);
@@ -681,7 +714,7 @@ public:
    // --- Entry logic
    void TryEnter()
      {
-      if(m_risk==NULL || m_positioning==NULL || m_indicators==NULL || m_learner==NULL)
+      if(m_risk==NULL || m_positioning==NULL || m_indicators==NULL || !m_learner.IsReady())
          return;
 
       if(m_risk->IsTradingBlocked())
@@ -718,7 +751,7 @@ public:
       if(!m_indicators->BuildFeatureVector(0,features))
          return;
 
-      double learnerProb = m_learner->Score(features);
+      double learnerProb = m_learner.Score(features);
       double trend       = m_indicators->TrendScore(0);
       double adx         = m_indicators->ADX(0);
       bool   squeeze     = m_indicators->IsSqueezeActive(0);
@@ -824,7 +857,7 @@ public:
    // --- Online learning + risk heartbeat on new bar
    void UpdateLearner()
      {
-      if(m_indicators==NULL || m_learner==NULL || m_risk==NULL)
+      if(m_indicators==NULL || !m_learner.IsReady() || m_risk==NULL)
          return;
 
       datetime barTime = iTime(m_indicators->Symbol(), m_indicators->PrimaryTimeframe(), 0);
@@ -843,7 +876,7 @@ public:
          double close0 = iClose(m_indicators->Symbol(), m_indicators->PrimaryTimeframe(), 0);
          double close1 = iClose(m_indicators->Symbol(), m_indicators->PrimaryTimeframe(), 1);
          double label  = (close0>close1)?1.0:0.0;
-         m_learner->Update(features,label);
+         m_learner.Update(features,label);
         }
 
       m_risk->OnBar();
