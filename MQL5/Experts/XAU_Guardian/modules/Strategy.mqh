@@ -397,15 +397,17 @@ private:
       slPoints=m_fixedSL;
       tpPoints=m_fixedTP;
 
-      IndicatorSuite &ind=*m_indicators;
+      IndicatorSuite *ind=m_indicators;
+      if(ind==NULL)
+         return;
 
       if(regime==REGIME_TREND)
         {
-         double donchianHigh=ind.DonchianHigh(0,20);
-         double donchianLow=ind.DonchianLow(0,20);
-         double keltnerUpper=ind.KeltnerUpper(0,1.5);
-         double keltnerLower=ind.KeltnerLower(0,1.5);
-         double emaSlope=ind.EMASlopeTF2();
+         double donchianHigh=ind->DonchianHigh(0,20);
+         double donchianLow=ind->DonchianLow(0,20);
+         double keltnerUpper=ind->KeltnerUpper(0,1.5);
+         double keltnerLower=ind->KeltnerLower(0,1.5);
+         double emaSlope=ind->EMASlopeTF2();
 
          if(m_allowLongs)
            {
@@ -431,9 +433,9 @@ private:
         }
       else
         {
-         double bbUpper=ind.BollingerUpper(0);
-         double bbLower=ind.BollingerLower(0);
-         double rsiFast=ind.RSI1(0);
+         double bbUpper=ind->BollingerUpper(0);
+         double bbLower=ind->BollingerLower(0);
+         double rsiFast=ind->RSI1(0);
          bool baseFilter=(adx<=m_adxMR && squeeze);
          if(m_allowLongs)
            {
@@ -617,26 +619,26 @@ public:
      {
       if(m_trailing==NULL || m_positioning==NULL || m_indicators==NULL || m_learner==NULL)
          return;
-      IndicatorSuite &ind=*m_indicators;
-      OnlineLearner &learner=*m_learner;
-      Positioning &positioning=*m_positioning;
-      TrailingManager &trailing=*m_trailing;
+      IndicatorSuite *ind=m_indicators;
+      OnlineLearner *learner=m_learner;
+      Positioning *positioning=m_positioning;
+      TrailingManager *trailing=m_trailing;
       double features[];
       double learnerProb=0.5;
       double trend=0.0;
       double emaSlope=0.0;
       double adx=0.0;
-      if(ind.BuildFeatureVector(0,features))
+      if(ind->BuildFeatureVector(0,features))
         {
-         learnerProb=learner.Score(features);
-         trend=ind.TrendScore(0);
-         emaSlope=ind.EMASlopeTF2();
-         adx=ind.ADX(0);
+         learnerProb=learner->Score(features);
+         trend=ind->TrendScore(0);
+         emaSlope=ind->EMASlopeTF2();
+         adx=ind->ADX(0);
         }
-      positioning.EnforceLotRatio(trade);
-      trailing.TrailAll(trade,m_trailStart,m_trailStep,m_atrAdverseFactor,
-                        m_beTriggerATR,m_beOffsetPoints,m_chandelierATR,m_chandelierPeriod,
-                        m_maxBarsInTrade,m_givebackPct,ind);
+      positioning->EnforceLotRatio(trade);
+      trailing->TrailAll(trade,m_trailStart,m_trailStep,m_atrAdverseFactor,
+                         m_beTriggerATR,m_beOffsetPoints,m_chandelierATR,m_chandelierPeriod,
+                         m_maxBarsInTrade,m_givebackPct,*ind);
       ApplyDirectionFlipGuard(trade,learnerProb,trend,emaSlope,adx);
      }
 
@@ -644,14 +646,14 @@ public:
      {
       if(m_trade==NULL || m_risk==NULL || m_positioning==NULL || m_indicators==NULL || m_learner==NULL || m_analytics==NULL)
          return;
-      CTrade &trade=*m_trade;
-      RiskManager &risk=*m_risk;
-      Positioning &positioning=*m_positioning;
-      IndicatorSuite &ind=*m_indicators;
-      OnlineLearner &learner=*m_learner;
-      Analytics &analytics=*m_analytics;
+      CTrade *trade=m_trade;
+      RiskManager *risk=m_risk;
+      Positioning *positioning=m_positioning;
+      IndicatorSuite *ind=m_indicators;
+      OnlineLearner *learner=m_learner;
+      Analytics *analytics=m_analytics;
 
-      if(risk.IsTradingBlocked())
+      if(risk->IsTradingBlocked())
         {
          GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug);
          return;
@@ -681,24 +683,24 @@ public:
         }
 
       double features[];
-      if(!ind.BuildFeatureVector(0,features))
+      if(!ind->BuildFeatureVector(0,features))
          return;
-      double learnerProb=learner.Score(features);
-      double trend=ind.TrendScore(0);
-      double adx=ind.ADX(0);
-      bool squeeze=ind.IsSqueezeActive(0);
-      double squeezeBreak=ind.SqueezeBreakoutScore(0);
-      double rsiH1=ind.RSI2(0);
-      double close=ind.Close(0);
-      double vol=ind.RealizedVolatility();
-      double dailyLossLeft=risk.DailyLossLeftAmount();
+      double learnerProb=learner->Score(features);
+      double trend=ind->TrendScore(0);
+      double adx=ind->ADX(0);
+      bool squeeze=ind->IsSqueezeActive(0);
+      double squeezeBreak=ind->SqueezeBreakoutScore(0);
+      double rsiH1=ind->RSI2(0);
+      double close=ind->Close(0);
+      double vol=ind->RealizedVolatility();
+      double dailyLossLeft=risk->DailyLossLeftAmount();
       if(dailyLossLeft<=0.0)
         {
          GuardianUtils::PrintDebug("Daily loss buffer exhausted",m_debug);
          return;
         }
-      double atrSmoothed=ind.ATREWMA(0.06);
-      double atrRaw=ind.ATR(0);
+      double atrSmoothed=ind->ATREWMA(0.06);
+      double atrRaw=ind->ATR(0);
       double atrEwmaPoints=(atrSmoothed>0.0?atrSmoothed:(atrRaw>0.0?atrRaw:0.0))/_Point;
       double atrBaselinePoints=(atrRaw>0.0)?atrRaw/_Point:atrEwmaPoints;
 
@@ -721,18 +723,18 @@ public:
       else
          direction=-1;
 
-      if(positioning.HasOppositePosition(direction))
+      if(positioning->HasOppositePosition(direction))
         {
          GuardianUtils::PrintDebug("Opposite position prevents hedge",m_debug);
          return;
         }
-      if(m_maxPositionsPerSide>0 && positioning.ActiveDirectionCount(direction)>=m_maxPositionsPerSide)
+      if(m_maxPositionsPerSide>0 && positioning->ActiveDirectionCount(direction)>=m_maxPositionsPerSide)
         {
          GuardianUtils::PrintDebug("Max positions per side reached",m_debug);
          return;
         }
 
-      double lot=positioning.ComputeNextLot(atrBaselinePoints,slPoints,atrEwmaPoints,dailyLossLeft);
+      double lot=positioning->ComputeNextLot(atrBaselinePoints,slPoints,atrEwmaPoints,dailyLossLeft);
       if(lot<=0.0)
          return;
 
@@ -754,7 +756,7 @@ public:
                GuardianUtils::PrintDebug("Margin check failed for buy",m_debug);
                return;
               }
-            executed=trade.Buy(lot,m_symbol,ask,sl,tp);
+            executed=trade->Buy(lot,m_symbol,ask,sl,tp);
            }
          else
            {
@@ -766,11 +768,11 @@ public:
                GuardianUtils::PrintDebug("Margin check failed for sell",m_debug);
                return;
               }
-            executed=trade.Sell(lot,m_symbol,bid,sl,tp);
+            executed=trade->Sell(lot,m_symbol,bid,sl,tp);
            }
          if(!executed)
            {
-            uint retcode=trade.ResultRetcode();
+            uint retcode=trade->ResultRetcode();
             if(retcode!=TRADE_RETCODE_REQUOTE && retcode!=TRADE_RETCODE_PRICE_CHANGED)
                break;
            }
@@ -778,9 +780,9 @@ public:
 
       if(executed)
         {
-         positioning.RegisterExecutedLot(lot);
-         risk.RegisterExecutedLot(lot);
-         analytics.SnapshotPositions();
+         positioning->RegisterExecutedLot(lot);
+         risk->RegisterExecutedLot(lot);
+         analytics->SnapshotPositions();
          RegisterTradeTimestamp(TimeCurrent());
          GuardianUtils::AppendLog("orders.log",
             StringFormat("%s %s %.2f",TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
@@ -792,9 +794,9 @@ public:
      {
       if(m_indicators==NULL || m_learner==NULL)
          return;
-      IndicatorSuite &ind=*m_indicators;
-      OnlineLearner &learner=*m_learner;
-      datetime barTime=iTime(ind.Symbol(),ind.PrimaryTimeframe(),0);
+      IndicatorSuite *ind=m_indicators;
+      OnlineLearner *learner=m_learner;
+      datetime barTime=iTime(ind->Symbol(),ind->PrimaryTimeframe(),0);
       if(barTime==0)
          return;
       if(m_lastBarTime==0)
@@ -805,17 +807,17 @@ public:
       if(barTime==m_lastBarTime)
          return;
       double features[];
-      if(ind.BuildFeatureVector(1,features))
+      if(ind->BuildFeatureVector(1,features))
         {
-         double close0=iClose(ind.Symbol(),ind.PrimaryTimeframe(),0);
-         double close1=iClose(ind.Symbol(),ind.PrimaryTimeframe(),1);
+         double close0=iClose(ind->Symbol(),ind->PrimaryTimeframe(),0);
+         double close1=iClose(ind->Symbol(),ind->PrimaryTimeframe(),1);
          double label=(close0>close1)?1.0:0.0;
-         learner.Update(features,label);
+         learner->Update(features,label);
         }
       if(m_risk!=NULL)
         {
-         RiskManager &risk=*m_risk;
-         risk.OnBar();
+         RiskManager *risk=m_risk;
+         risk->OnBar();
         }
       m_lastBarTime=barTime;
      }
