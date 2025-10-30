@@ -24,12 +24,12 @@ private:
    string           m_symbol;
    int              m_magic;
    CTrade           m_trade;
-   RiskManager      m_risk;
-   Positioning      m_positioning;
-   IndicatorSuite   m_indicators;
-   OnlineLearner    m_learner;
-   TrailingManager  m_trailing;
-   Analytics        m_analytics;
+   RiskManager     *m_risk;
+   Positioning     *m_positioning;
+   IndicatorSuite  *m_indicators;
+   OnlineLearner   *m_learner;
+   TrailingManager *m_trailing;
+   Analytics       *m_analytics;
 
    // --- General inputs
    bool    m_debug;
@@ -358,13 +358,18 @@ private:
       slPoints=m_fixedSL;
       tpPoints=m_fixedTP;
 
+      if(m_indicators==NULL)
+         return;
+
+      IndicatorSuite &ind=*m_indicators;
+
       if(regime==REGIME_TREND)
         {
-         double donchianHigh = m_indicators.DonchianHigh(0,20);
-         double donchianLow  = m_indicators.DonchianLow(0,20);
-         double keltnerUpper = m_indicators.KeltnerUpper(0,1.5);
-         double keltnerLower = m_indicators.KeltnerLower(0,1.5);
-         double emaSlope     = m_indicators.EMASlopeTF2();
+         double donchianHigh = ind.DonchianHigh(0,20);
+         double donchianLow  = ind.DonchianLow(0,20);
+         double keltnerUpper = ind.KeltnerUpper(0,1.5);
+         double keltnerLower = ind.KeltnerLower(0,1.5);
+         double emaSlope     = ind.EMASlopeTF2();
 
          if(m_allowLongs)
            {
@@ -389,9 +394,9 @@ private:
         }
       else
         {
-         double bbUpper = m_indicators.BollingerUpper(0);
-         double bbLower = m_indicators.BollingerLower(0);
-         double rsiFast = m_indicators.RSI1(0);
+         double bbUpper = ind.BollingerUpper(0);
+         double bbLower = ind.BollingerLower(0);
+         double rsiFast = ind.RSI1(0);
          bool baseFilter = (adx<=m_adxMR && squeeze);
 
          if(m_allowLongs)
@@ -467,12 +472,12 @@ public:
      : m_symbol(""),
        m_magic(0),
        m_trade(),
-       m_risk(),
-       m_positioning(),
-       m_indicators(),
-       m_learner(),
-       m_trailing(),
-       m_analytics(),
+       m_risk(NULL),
+       m_positioning(NULL),
+       m_indicators(NULL),
+       m_learner(NULL),
+       m_trailing(NULL),
+       m_analytics(NULL),
        m_debug(false),
        m_allowLongs(true),
        m_allowShorts(true),
@@ -556,14 +561,14 @@ public:
       m_symbol=symbol;
       m_magic=magic;
 
-      // copy collaborators into members
+      // bind collaborators into members
       m_trade       = trade;
-      m_risk        = risk;
-      m_positioning = positioning;
-      m_indicators  = indicators;
-      m_learner     = learner;
-      m_trailing    = trailing;
-      m_analytics   = analytics;
+      m_risk        = &risk;
+      m_positioning = &positioning;
+      m_indicators  = &indicators;
+      m_learner     = &learner;
+      m_trailing    = &trailing;
+      m_analytics   = &analytics;
 
       m_allowLongs=allowLongs;
       m_allowShorts=allowShorts;
@@ -648,24 +653,27 @@ public:
    // --- Manage open positions (trailing + flip guard)
    void ManagePositions(CTrade &trade_ref)
      {
+      if(m_indicators==NULL || m_learner==NULL || m_positioning==NULL || m_trailing==NULL)
+         return;
+
       double features[];
       double learnerProb=0.5;
       double trend=0.0;
       double emaSlope=0.0;
       double adx=0.0;
 
-      if(m_indicators.BuildFeatureVector(0,features))
+      if(m_indicators->BuildFeatureVector(0,features))
         {
-         learnerProb = m_learner.Score(features);
-         trend       = m_indicators.TrendScore(0);
-         emaSlope    = m_indicators.EMASlopeTF2();
-         adx         = m_indicators.ADX(0);
+         learnerProb = m_learner->Score(features);
+         trend       = m_indicators->TrendScore(0);
+         emaSlope    = m_indicators->EMASlopeTF2();
+         adx         = m_indicators->ADX(0);
         }
 
-      m_positioning.EnforceLotRatio(trade_ref);
-      m_trailing.TrailAll(trade_ref,m_trailStart,m_trailStep,m_atrAdverseFactor,
-                          m_beTriggerATR,m_beOffsetPoints,m_chandelierATR,m_chandelierPeriod,
-                          m_maxBarsInTrade,m_givebackPct,m_indicators);
+      m_positioning->EnforceLotRatio(trade_ref);
+      m_trailing->TrailAll(trade_ref,m_trailStart,m_trailStep,m_atrAdverseFactor,
+                           m_beTriggerATR,m_beOffsetPoints,m_chandelierATR,m_chandelierPeriod,
+                           m_maxBarsInTrade,m_givebackPct,*m_indicators);
 
       ApplyDirectionFlipGuard(trade_ref,learnerProb,trend,emaSlope,adx);
      }
@@ -673,7 +681,10 @@ public:
    // --- Entry logic
    void TryEnter()
      {
-      if(m_risk.IsTradingBlocked())
+      if(m_risk==NULL || m_positioning==NULL || m_indicators==NULL || m_learner==NULL)
+         return;
+
+      if(m_risk->IsTradingBlocked())
         {
          GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug);
          return;
@@ -701,30 +712,30 @@ public:
         {
          GuardianUtils::PrintDebug("Trade density guard active",m_debug);
          return;
-        }
+      }
 
       double features[];
-      if(!m_indicators.BuildFeatureVector(0,features))
+      if(!m_indicators->BuildFeatureVector(0,features))
          return;
 
-      double learnerProb = m_learner.Score(features);
-      double trend       = m_indicators.TrendScore(0);
-      double adx         = m_indicators.ADX(0);
-      bool   squeeze     = m_indicators.IsSqueezeActive(0);
-      double squeezeBreak= m_indicators.SqueezeBreakoutScore(0);
-      double rsiH1       = m_indicators.RSI2(0);
-      double close       = m_indicators.Close(0);
-      double vol         = m_indicators.RealizedVolatility();
+      double learnerProb = m_learner->Score(features);
+      double trend       = m_indicators->TrendScore(0);
+      double adx         = m_indicators->ADX(0);
+      bool   squeeze     = m_indicators->IsSqueezeActive(0);
+      double squeezeBreak= m_indicators->SqueezeBreakoutScore(0);
+      double rsiH1       = m_indicators->RSI2(0);
+      double close       = m_indicators->Close(0);
+      double vol         = m_indicators->RealizedVolatility();
 
-      double dailyLossLeft = m_risk.DailyLossLeftAmount();
+      double dailyLossLeft = m_risk->DailyLossLeftAmount();
       if(dailyLossLeft<=0.0)
         {
          GuardianUtils::PrintDebug("Daily loss buffer exhausted",m_debug);
          return;
         }
 
-      double atrSmoothed = m_indicators.ATREWMA(0.06);
-      double atrRaw      = m_indicators.ATR(0);
+      double atrSmoothed = m_indicators->ATREWMA(0.06);
+      double atrRaw      = m_indicators->ATR(0);
       double point       = SymbolInfoDouble(m_symbol,SYMBOL_POINT);
       double atrEwmaPts  = (atrSmoothed>0.0?atrSmoothed:(atrRaw>0.0?atrRaw:0.0))/point;
       double atrBasePts  = (atrRaw>0.0)?(atrRaw/point):atrEwmaPts;
@@ -742,18 +753,18 @@ public:
       else if(longSignal) direction=1;
       else direction=-1;
 
-      if(m_positioning.HasOppositePosition(direction))
+      if(m_positioning->HasOppositePosition(direction))
         {
          GuardianUtils::PrintDebug("Opposite position prevents hedge",m_debug);
          return;
         }
-      if(m_maxPositionsPerSide>0 && m_positioning.ActiveDirectionCount(direction)>=m_maxPositionsPerSide)
+      if(m_maxPositionsPerSide>0 && m_positioning->ActiveDirectionCount(direction)>=m_maxPositionsPerSide)
         {
          GuardianUtils::PrintDebug("Max positions per side reached",m_debug);
          return;
         }
 
-      double lot = m_positioning.ComputeNextLot(atrBasePts,slPoints,atrEwmaPts,dailyLossLeft);
+      double lot = m_positioning->ComputeNextLot(atrBasePts,slPoints,atrEwmaPts,dailyLossLeft);
       if(lot<=0.0) return;
 
       int digits = (int)SymbolInfoInteger(m_symbol,SYMBOL_DIGITS);
@@ -798,9 +809,10 @@ public:
 
       if(executed)
         {
-         m_positioning.RegisterExecutedLot(lot);
-         m_risk.RegisterExecutedLot(lot);
-         m_analytics.SnapshotPositions();
+         m_positioning->RegisterExecutedLot(lot);
+         m_risk->RegisterExecutedLot(lot);
+         if(m_analytics!=NULL)
+            m_analytics->SnapshotPositions();
          RegisterTradeTimestamp(TimeCurrent());
          GuardianUtils::AppendLog("orders.log",
            StringFormat("%s %s %.2f",
@@ -812,7 +824,10 @@ public:
    // --- Online learning + risk heartbeat on new bar
    void UpdateLearner()
      {
-      datetime barTime = iTime(m_indicators.Symbol(), m_indicators.PrimaryTimeframe(), 0);
+      if(m_indicators==NULL || m_learner==NULL || m_risk==NULL)
+         return;
+
+      datetime barTime = iTime(m_indicators->Symbol(), m_indicators->PrimaryTimeframe(), 0);
       if(barTime==0) return;
 
       if(m_lastBarTime==0)
@@ -823,15 +838,15 @@ public:
       if(barTime==m_lastBarTime) return;
 
       double features[];
-      if(m_indicators.BuildFeatureVector(1,features))
+      if(m_indicators->BuildFeatureVector(1,features))
         {
-         double close0 = iClose(m_indicators.Symbol(), m_indicators.PrimaryTimeframe(), 0);
-         double close1 = iClose(m_indicators.Symbol(), m_indicators.PrimaryTimeframe(), 1);
+         double close0 = iClose(m_indicators->Symbol(), m_indicators->PrimaryTimeframe(), 0);
+         double close1 = iClose(m_indicators->Symbol(), m_indicators->PrimaryTimeframe(), 1);
          double label  = (close0>close1)?1.0:0.0;
-         m_learner.Update(features,label);
+         m_learner->Update(features,label);
         }
 
-      m_risk.OnBar();
+      m_risk->OnBar();
       m_lastBarTime=barTime;
      }
 
