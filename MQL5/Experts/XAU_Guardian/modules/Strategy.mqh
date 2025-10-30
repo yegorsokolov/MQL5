@@ -421,11 +421,11 @@ private:
 
       if(regime==REGIME_TREND)
         {
-         double donchianHigh = ind->DonchianHigh(0,20);
-         double donchianLow  = ind->DonchianLow(0,20);
-         double keltnerUpper = ind->KeltnerUpper(0,1.5);
-         double keltnerLower = ind->KeltnerLower(0,1.5);
-         double emaSlope     = ind->EMASlopeTF2();
+         double donchianHigh = ind.DonchianHigh(0,20);
+         double donchianLow  = ind.DonchianLow(0,20);
+         double keltnerUpper = ind.KeltnerUpper(0,1.5);
+         double keltnerLower = ind.KeltnerLower(0,1.5);
+         double emaSlope     = ind.EMASlopeTF2();
 
          if(m_allowLongs)
            {
@@ -450,9 +450,9 @@ private:
         }
       else
         {
-         double bbUpper = ind->BollingerUpper(0);
-         double bbLower = ind->BollingerLower(0);
-         double rsiFast = ind->RSI1(0);
+         double bbUpper = ind.BollingerUpper(0);
+         double bbLower = ind.BollingerLower(0);
+         double rsiFast = ind.RSI1(0);
          bool baseFilter = (adx<=m_adxMR && squeeze);
 
          if(m_allowLongs)
@@ -480,7 +480,7 @@ private:
       {
          CleanupGuards();
       
-         // iterate by index -> get ticket -> select by ticket
+         // iterate by index . get ticket . select by ticket
          for(int i = PositionsTotal()-1; i >= 0; --i)
          {
             ulong ticket_i = PositionGetTicket(i);
