@@ -1,9 +1,10 @@
 #ifndef XAU_GUARDIAN_TRAILING_MQH
 #define XAU_GUARDIAN_TRAILING_MQH
 
+#include <Object.mqh>
 #include "Utils.mqh"
 
-class TrailingManager
+class TrailingManager : public CObject
   {
 private:
    string   m_symbol;

@@ -1,9 +1,10 @@
 #ifndef XAU_GUARDIAN_RISKMANAGER_MQH
 #define XAU_GUARDIAN_RISKMANAGER_MQH
 
+#include <Object.mqh>
 #include "Utils.mqh"
 
-class RiskManager
+class RiskManager : public CObject
   {
 private:
    string   m_symbol;

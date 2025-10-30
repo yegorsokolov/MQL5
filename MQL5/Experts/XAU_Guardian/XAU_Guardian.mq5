@@ -4,6 +4,7 @@
 #property strict
 
 #include <Trade/Trade.mqh>
+#include <Trade/DealInfo.mqh>
 #include "modules/Utils.mqh"
 #include "modules/RiskManager.mqh"
 #include "modules/Positioning.mqh"
