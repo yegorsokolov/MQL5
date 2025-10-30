@@ -25,6 +25,13 @@ input long   Inp_Magic                    = 220392288;
 // general controls
 input bool   Inp_AllowLongs               = true;
 input bool   Inp_AllowShorts              = true;
+input double Inp_VirtualBalance           = 10000.0;
+input double Inp_FloatingDD_Limit         = 0.009;   // 0.9%
+input double Inp_DailyDD_Limit            = 0.0385;  // 3.85%
+input int    Inp_CooldownMinutes          = 60;
+input double Inp_BaseLot                  = 0.10;
+input double Inp_MaxLotMultiplier         = 1.9;
+input double Inp_RiskPerTrade             = 0.0;
 input double Inp_TP_Points                = 1200.0;
 input double Inp_SL_Points                = 850.0;
 input double Inp_TrailStart               = 700.0;
@@ -38,6 +45,9 @@ input double Inp_MinLearnerProb           = 0.55;
 
 // soft drawdown/ATR adverse handling
 input double Inp_ATR_AdverseFactor        = 0.0;
+input int    Inp_LossStreakLimit          = 3;
+input double Inp_SoftDrawdownPct          = 0.02;
+input int    Inp_SoftCooldownBars         = 3;
 
 // session/night block
 input bool   Inp_NightBlock               = false;
@@ -75,6 +85,21 @@ input bool   Inp_UseNewsCalendar          = false;
 input string Inp_ManualNewsFile           = "ManualNews.csv";
 input int    Inp_NewsLookaheadMinutes     = 720;
 
+// feature stack / learner inputs
+input ENUM_TIMEFRAMES Inp_TF1              = PERIOD_M15;
+input ENUM_TIMEFRAMES Inp_TF2              = PERIOD_H1;
+input ENUM_TIMEFRAMES Inp_TF3              = PERIOD_H4;
+input int    Inp_FeatureWindow            = 120;
+input bool   Inp_UseOnlineLearning        = true;
+input double Inp_LearnRate                = 0.01;
+input double Inp_L2Lambda                 = 0.0;
+input double Inp_LearnDecay               = 0.0;
+input int    Inp_SnapshotBars             = 96;
+
+// equity curve watchdog
+input int    Inp_ECS_PeriodMinutes        = 360;
+input double Inp_ECS_Drawdown             = 0.02;
+
 // liquidity / order book filter
 input double Inp_MinBookVolume            = 0.0;
 input int    Inp_BookDepthLevels          = 0;
@@ -108,77 +133,148 @@ OnlineLearner   g_learner;
 TrailingManager g_trailing;
 Analytics       g_analytics;
 StrategyEngine  g_strategy;
+GuardianPersistedState g_state;
 
 //==================================================================//
 //============================= ON_INIT ============================//
 //==================================================================//
 int OnInit()
 {
-   // (If your modules have Init methods with different signatures, keep them there.
-   //  StrategyEngine.Init signature is taken from Strategy.mqh you shared.)
-   g_strategy.Init(_Symbol,
-                   (int)Inp_Magic,
-                   g_trade,
-                   g_risk,
-                   g_positioning,
-                   g_indicators,
-                   g_learner,
-                   g_trailing,
-                   g_analytics,
-                   Inp_AllowLongs,
-                   Inp_AllowShorts,
-                   Inp_TP_Points,
-                   Inp_SL_Points,
-                   Inp_TrailStart,
-                   Inp_TrailStep,
-                   Inp_MinTrend,
-                   Inp_MinADX,
-                   Inp_RSI_Long,
-                   Inp_RSI_Short,
-                   Inp_SpreadLimit,
-                   Inp_MinLearnerProb,
-                   Inp_NightBlock,
-                   Inp_NightStartHour,
-                   Inp_NightEndHour,
-                   Inp_ATR_AdverseFactor,
-                   Inp_Debug,
-                   Inp_ADX_Trend,
-                   Inp_ADX_MR,
-                   Inp_ADX_Regime,
-                   Inp_Vol_Regime,
-                   Inp_RSI_MR_Buy,
-                   Inp_RSI_MR_Sell,
-                   Inp_ATR_Trend_SL,
-                   Inp_ATR_Trend_TP,
-                   Inp_ATR_MR_SL,
-                   Inp_ATR_MR_TP,
-                   (int)Inp_RegimeMode,         // MODE_AUTO / TREND / MEAN
-                   Inp_MinLearnerExit,
-                   Inp_ExitConfirmBars,
-                   Inp_ADX_Floor,
-                   Inp_LondonNY_Only,
-                   Inp_LondonStart,
-                   Inp_LondonEnd,
-                   Inp_NYStart,
-                   Inp_NYEnd,
-                   Inp_NewsFreezeMinutes,
-                   Inp_UseNewsCalendar,
-                   Inp_ManualNewsFile,
-                   Inp_NewsLookaheadMinutes,
-                   Inp_MinBookVolume,
-                   Inp_BookDepthLevels,
-                   Inp_MaxPositionsPerSide,
-                   Inp_BE_TriggerATR,
-                   Inp_BE_OffsetPoints,
-                   Inp_ChandelierATR,
-                   Inp_ChandelierPeriod,
-                   Inp_MaxBarsInTrade,
-                   Inp_GivebackPct,
-                   Inp_MaxRetries,
-                   Inp_MaxTradesPerHour,
-                   Inp_MinMinutesBetweenTrades);
+   GuardianUtils::EnsurePaths();
 
-   // 1-second timer to refresh calendar/manual windows and learner
+   if(!GuardianStateStore::Load(g_state, GUARDIAN_FEATURE_COUNT))
+      GuardianStateStore::Save(g_state);
+
+   double virtualBalance = (Inp_VirtualBalance>0.0)?Inp_VirtualBalance:AccountInfoDouble(ACCOUNT_BALANCE);
+   if(virtualBalance<=0.0)
+      virtualBalance = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(virtualBalance<=0.0)
+      virtualBalance = 10000.0;
+
+   if(!g_risk.Init(g_state,
+                   _Symbol,
+                   (int)Inp_Magic,
+                   virtualBalance,
+                   Inp_FloatingDD_Limit,
+                   Inp_DailyDD_Limit,
+                   Inp_CooldownMinutes,
+                   Inp_Debug,
+                   Inp_LossStreakLimit,
+                   Inp_SoftDrawdownPct,
+                   Inp_SoftCooldownBars,
+                   Inp_ECS_Drawdown,
+                   Inp_ECS_PeriodMinutes))
+   {
+      GuardianUtils::PrintInfo("Risk manager initialisation failed");
+      return(INIT_FAILED);
+   }
+
+   if(!g_positioning.Init(g_state,
+                          _Symbol,
+                          (int)Inp_Magic,
+                          Inp_BaseLot,
+                          Inp_MaxLotMultiplier,
+                          Inp_Debug,
+                          virtualBalance,
+                          Inp_RiskPerTrade))
+   {
+      GuardianUtils::PrintInfo("Positioning initialisation failed");
+      return(INIT_FAILED);
+   }
+
+   if(!g_indicators.Init(_Symbol,
+                         Inp_TF1,
+                         Inp_TF2,
+                         Inp_TF3,
+                         Inp_FeatureWindow,
+                         Inp_Debug))
+   {
+      GuardianUtils::PrintInfo("Indicator initialisation failed");
+      return(INIT_FAILED);
+   }
+
+   double learnRate = (Inp_UseOnlineLearning?Inp_LearnRate:0.0);
+   if(!g_learner.Init(g_state,
+                      GUARDIAN_FEATURE_COUNT,
+                      learnRate,
+                      Inp_Debug,
+                      Inp_L2Lambda,
+                      Inp_LearnDecay,
+                      Inp_SnapshotBars))
+   {
+      GuardianUtils::PrintInfo("Online learner initialisation failed");
+      return(INIT_FAILED);
+   }
+
+   g_trailing.Init(_Symbol,(int)Inp_Magic,Inp_Debug);
+   g_analytics.Init(_Symbol,(int)Inp_Magic,Inp_Debug);
+
+   if(!g_strategy.Init(_Symbol,
+                       (int)Inp_Magic,
+                       g_trade,
+                       g_risk,
+                       g_positioning,
+                       g_indicators,
+                       g_learner,
+                       g_trailing,
+                       g_analytics,
+                       Inp_AllowLongs,
+                       Inp_AllowShorts,
+                       Inp_TP_Points,
+                       Inp_SL_Points,
+                       Inp_TrailStart,
+                       Inp_TrailStep,
+                       Inp_MinTrend,
+                       Inp_MinADX,
+                       Inp_RSI_Long,
+                       Inp_RSI_Short,
+                       Inp_SpreadLimit,
+                       Inp_MinLearnerProb,
+                       Inp_NightBlock,
+                       Inp_NightStartHour,
+                       Inp_NightEndHour,
+                       Inp_ATR_AdverseFactor,
+                       Inp_Debug,
+                       Inp_ADX_Trend,
+                       Inp_ADX_MR,
+                       Inp_ADX_Regime,
+                       Inp_Vol_Regime,
+                       Inp_RSI_MR_Buy,
+                       Inp_RSI_MR_Sell,
+                       Inp_ATR_Trend_SL,
+                       Inp_ATR_Trend_TP,
+                       Inp_ATR_MR_SL,
+                       Inp_ATR_MR_TP,
+                       (int)Inp_RegimeMode,
+                       Inp_MinLearnerExit,
+                       Inp_ExitConfirmBars,
+                       Inp_ADX_Floor,
+                       Inp_LondonNY_Only,
+                       Inp_LondonStart,
+                       Inp_LondonEnd,
+                       Inp_NYStart,
+                       Inp_NYEnd,
+                       Inp_NewsFreezeMinutes,
+                       Inp_UseNewsCalendar,
+                       Inp_ManualNewsFile,
+                       Inp_NewsLookaheadMinutes,
+                       Inp_MinBookVolume,
+                       Inp_BookDepthLevels,
+                       Inp_MaxPositionsPerSide,
+                       Inp_BE_TriggerATR,
+                       Inp_BE_OffsetPoints,
+                       Inp_ChandelierATR,
+                       Inp_ChandelierPeriod,
+                       Inp_MaxBarsInTrade,
+                       Inp_GivebackPct,
+                       Inp_MaxRetries,
+                       Inp_MaxTradesPerHour,
+                       Inp_MinMinutesBetweenTrades))
+   {
+      GuardianUtils::PrintInfo("Strategy initialisation failed");
+      return(INIT_FAILED);
+   }
+
    EventSetTimer(1);
 
    return(INIT_SUCCEEDED);
@@ -191,6 +287,8 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    g_strategy.Shutdown();
+   g_indicators.Shutdown();
+   GuardianStateStore::Save(g_state);
 }
 
 //==================================================================//
@@ -198,6 +296,11 @@ void OnDeinit(const int reason)
 //==================================================================//
 void OnTick()
 {
+   if(g_risk.CheckFloatingDDAndAct(g_trade))
+      return;
+   if(g_risk.CheckDailyDDAndAct(g_trade))
+      return;
+
    // trailing/exit management
    g_strategy.ManagePositions(g_trade);
 
