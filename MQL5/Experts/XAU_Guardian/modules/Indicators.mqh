@@ -301,7 +301,7 @@ public:
 
    double Close(const int shift) const
      {
-      double buf[5];
+      double buf[];
       ArraySetAsSeries(buf,true);
       if(CopyClose(m_symbol,m_tf1,shift,1,buf)<1)
          return 0.0;
@@ -310,7 +310,7 @@ public:
 
    double High(const int shift) const
      {
-      double buf[5];
+      double buf[];
       ArraySetAsSeries(buf,true);
       if(CopyHigh(m_symbol,m_tf1,shift,1,buf)<1)
          return 0.0;
@@ -319,7 +319,7 @@ public:
 
    double Low(const int shift) const
      {
-      double buf[5];
+      double buf[];
       ArraySetAsSeries(buf,true);
       if(CopyLow(m_symbol,m_tf1,shift,1,buf)<1)
          return 0.0;
