@@ -1,9 +1,10 @@
 #ifndef XAU_GUARDIAN_ONLINELEARNER_MQH
 #define XAU_GUARDIAN_ONLINELEARNER_MQH
 
+#include <Object.mqh>
 #include "Utils.mqh"
 
-class OnlineLearner
+class OnlineLearner : public CObject
   {
 private:
    GuardianPersistedState *m_state;

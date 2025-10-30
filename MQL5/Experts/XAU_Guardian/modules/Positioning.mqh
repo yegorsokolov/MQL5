@@ -1,9 +1,10 @@
 #ifndef XAU_GUARDIAN_POSITIONING_MQH
 #define XAU_GUARDIAN_POSITIONING_MQH
 
+#include <Object.mqh>
 #include "Utils.mqh"
 
-class Positioning
+class Positioning : public CObject
   {
 private:
    string   m_symbol;
