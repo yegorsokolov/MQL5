@@ -394,15 +394,15 @@ private:
       if(m_indicators==NULL)
          return;
 
-      IndicatorSuite &ind=*m_indicators;
+      IndicatorSuite *ind=m_indicators;
 
       if(regime==REGIME_TREND)
         {
-         double donchianHigh = ind.DonchianHigh(0,20);
-         double donchianLow  = ind.DonchianLow(0,20);
-         double keltnerUpper = ind.KeltnerUpper(0,1.5);
-         double keltnerLower = ind.KeltnerLower(0,1.5);
-         double emaSlope     = ind.EMASlopeTF2();
+         double donchianHigh = ind->DonchianHigh(0,20);
+         double donchianLow  = ind->DonchianLow(0,20);
+         double keltnerUpper = ind->KeltnerUpper(0,1.5);
+         double keltnerLower = ind->KeltnerLower(0,1.5);
+         double emaSlope     = ind->EMASlopeTF2();
 
          if(m_allowLongs)
            {
@@ -427,9 +427,9 @@ private:
         }
       else
         {
-         double bbUpper = ind.BollingerUpper(0);
-         double bbLower = ind.BollingerLower(0);
-         double rsiFast = ind.RSI1(0);
+         double bbUpper = ind->BollingerUpper(0);
+         double bbLower = ind->BollingerLower(0);
+         double rsiFast = ind->RSI1(0);
          bool baseFilter = (adx<=m_adxMR && squeeze);
 
          if(m_allowLongs)
