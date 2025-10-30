@@ -43,11 +43,11 @@ public:
       SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_MAX,maxLot);
       SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP,step);
       double sessionMin=m_baseLot;
-      if(m_state!=NULL && m_state->smallest_lot>0.0)
-         sessionMin=MathMax(m_baseLot,m_state->smallest_lot);
+      if(m_state!=NULL && (*m_state).smallest_lot>0.0)
+         sessionMin=MathMax(m_baseLot,(*m_state).smallest_lot);
       double lot=MathMax(sessionMin,m_baseLot);
-      if(m_state!=NULL && m_state->smallest_lot>0.0)
-         lot=MathMin(lot,m_state->smallest_lot*m_maxMultiplier);
+      if(m_state!=NULL && (*m_state).smallest_lot>0.0)
+         lot=MathMin(lot,(*m_state).smallest_lot*m_maxMultiplier);
       lot=GuardianUtils::NormalizeLot(step,MathMax(minLot,m_baseLot),maxLot,lot);
 
       double effectiveStop=slPoints;
@@ -90,9 +90,9 @@ public:
      {
       if(m_state==NULL)
          return;
-      if(m_state->smallest_lot<=0.0 || lot<m_state->smallest_lot)
+      if((*m_state).smallest_lot<=0.0 || lot<(*m_state).smallest_lot)
         {
-         m_state->smallest_lot=lot;
+         (*m_state).smallest_lot=lot;
          GuardianStateStore::Save(*m_state);
         }
      }
@@ -117,9 +117,9 @@ public:
 
    double CurrentSmallestLot() const
      {
-      if(m_state==NULL || m_state->smallest_lot<=0.0)
+      if(m_state==NULL || (*m_state).smallest_lot<=0.0)
          return m_baseLot;
-      return m_state->smallest_lot;
+      return (*m_state).smallest_lot;
      }
 
    int ActiveDirectionCount(const int dir) const
