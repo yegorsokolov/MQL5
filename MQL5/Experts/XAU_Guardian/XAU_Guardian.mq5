@@ -228,19 +228,32 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(StringCompare(trans.symbol, _Symbol) != 0)
       return;
 
-   // ignore other magics (allow zero magic for manual/other if you wish)
-   if(trans.magic != Inp_Magic && trans.magic != 0)
-      return;
-
    // only react when a deal is added
    if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
    {
-      const ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)trans.entry;
+      if(trans.deal == 0)
+         return;
+
+      if(!HistoryDealSelect(trans.deal))
+         return;
+
+      const string deal_symbol = HistoryDealGetString(trans.deal, DEAL_SYMBOL);
+      if(StringCompare(deal_symbol, _Symbol) != 0)
+         return;
+
+      // ignore other magics (allow zero magic for manual/other if you wish)
+      const long deal_magic = (long)HistoryDealGetInteger(trans.deal, DEAL_MAGIC);
+      if(deal_magic != (long)Inp_Magic && deal_magic != 0)
+         return;
+
+      const ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
 
       // A position was decreased/closed OR netted out
       if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT || entry == DEAL_ENTRY_OUT_BY)
       {
-         const double profit = trans.profit + trans.commission + trans.swap;
+         const double profit = HistoryDealGetDouble(trans.deal, DEAL_PROFIT)
+                              + HistoryDealGetDouble(trans.deal, DEAL_COMMISSION)
+                              + HistoryDealGetDouble(trans.deal, DEAL_SWAP);
 
          // housekeeping
          g_analytics.RecordTrade(profit);
@@ -254,7 +267,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       // A position was increased/opened
       else if(entry == DEAL_ENTRY_IN)
       {
-         g_risk.RegisterExecutedLot(trans.volume);
+         const double volume = HistoryDealGetDouble(trans.deal, DEAL_VOLUME);
+         g_risk.RegisterExecutedLot(volume);
       }
    }
 }
