@@ -10,6 +10,7 @@
 #include "OnlineLearner.mqh"
 #include "Trailing.mqh"
 #include "Analytics.mqh"
+#include "Diagnostics.mqh"
 #include "news/calendar_native.mqh"
 #include "filters/liquidity_spread.mqh"
 
@@ -110,6 +111,7 @@ private:
    int     m_nyEnd;
    int     m_newsFreezeMinutes;
    bool    m_useNewsCalendar;
+   bool    m_disableNewsInTester;
    string  m_manualNewsFile;
    datetime m_newsStarts[];
    datetime m_newsEnds[];
@@ -286,13 +288,34 @@ private:
       return false;
      }
 
-   bool TimeBlocked() const
+   bool TimeBlocked(bool &hoursOk,bool &newsOk) const
      {
       datetime now=TimeCurrent();
-      if(m_nightBlock && GuardianUtils::IsWithinHours(now,m_nightStart,m_nightEnd)) return true;
-      if(!SessionAllowed(now)) return true;
-      if(NewsBlocked(now)) return true;
+      bool nightBlocked=(m_nightBlock && GuardianUtils::IsWithinHours(now,m_nightStart,m_nightEnd));
+      bool sessionOk=SessionAllowed(now);
+      hoursOk=(!nightBlocked && sessionOk);
+
+      bool newsBlocked=NewsBlocked(now);
+      newsOk=!newsBlocked;
+
+      if(!hoursOk)
+         return true;
+
+      if(!newsOk)
+        {
+         if((bool)MQLInfoInteger(MQL_TESTER) && m_disableNewsInTester)
+            return false;
+         return true;
+        }
+
       return false;
+     }
+
+   bool TimeBlocked() const
+     {
+      bool hoursOk=true;
+      bool newsOk=true;
+      return TimeBlocked(hoursOk,newsOk);
      }
 
    void LoadManualNewsWindows()
@@ -550,6 +573,7 @@ public:
        m_nyEnd(22),
        m_newsFreezeMinutes(0),
        m_useNewsCalendar(false),
+       m_disableNewsInTester(true),
        m_newsLookaheadMinutes(720),
        m_manualNewsTimestamp(0),
        m_manualNewsMissingLogged(false),
@@ -586,6 +610,7 @@ public:
              const int exitConfirmBars,const double adxFloor,const bool londonNYOnly,const int londonStart,
              const int londonEnd,const int nyStart,const int nyEnd,const int newsFreezeMinutes,
              const bool useNewsCalendar,const string manualNewsFile,const int newsLookaheadMinutes,
+             const bool disableNewsInTester,
              const double minBookVolume,const int bookDepthLevels,const int maxPositionsPerSide,
              const double beTriggerATR,const double beOffsetPoints,const double chandelierATR,const int chandelierPeriod,
              const int maxBarsInTrade,const double givebackPct,const int maxRetries,
@@ -645,6 +670,7 @@ public:
 
       m_newsFreezeMinutes=newsFreezeMinutes;
       m_useNewsCalendar=useNewsCalendar;
+      m_disableNewsInTester=disableNewsInTester;
       m_manualNewsFile=manualNewsFile;
       m_newsLookaheadMinutes=MathMax(60,newsLookaheadMinutes);
       m_manualNewsTimestamp=0;
@@ -712,19 +738,40 @@ public:
      }
 
    // --- Entry logic
-   void TryEnter()
+   void TryEnter(const bool riskPreBlocked=false)
      {
-      if(m_risk==NULL || m_positioning==NULL || m_indicators==NULL || !m_learner.IsReady())
-         return;
+      Diag_Reset();
 
-      if((*m_risk).IsTradingBlocked())
+      bool signalAllowLong=false;
+      bool signalAllowShort=false;
+
+      if(m_risk==NULL || m_positioning==NULL || m_indicators==NULL || !m_learner.IsReady())
         {
-         GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug);
+         bool rmUnlocked=(m_risk!=NULL)?(!(*m_risk).IsTradingBlocked()):false;
+         if(riskPreBlocked)
+            rmUnlocked=false;
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,true,true);
          return;
         }
-      if(TimeBlocked())
+
+      bool hoursOk=true;
+      bool newsOk=true;
+      bool timeBlocked=TimeBlocked(hoursOk,newsOk);
+      bool rmUnlocked=!(*m_risk).IsTradingBlocked();
+      if(riskPreBlocked)
+         rmUnlocked=false;
+
+      if(!rmUnlocked)
+        {
+         GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
+         return;
+        }
+
+      if(timeBlocked)
         {
          GuardianUtils::PrintDebug("Entry blocked by session/news filter",m_debug);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
 
@@ -732,11 +779,15 @@ public:
       if(!m_liquidityFilter.IsSpreadAcceptable(spread))
         {
          GuardianUtils::PrintDebug("Spread too high: "+DoubleToString(spread,1),m_debug);
+         Diag_AddReason(StringFormat("Spread %.1f exceeds filter",spread),true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
       if(!m_liquidityFilter.IsLiquidityAcceptable())
         {
          GuardianUtils::PrintDebug("Liquidity filter blocked entry",m_debug);
+         Diag_AddReason("Liquidity filter blocked entry",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
 
@@ -744,12 +795,18 @@ public:
       if(!TradeDensityAllows(now))
         {
          GuardianUtils::PrintDebug("Trade density guard active",m_debug);
+         Diag_AddReason("Trade density guard active",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
-      }
+        }
 
       double features[];
       if(!(*m_indicators).BuildFeatureVector(0,features))
+        {
+         Diag_AddReason("Indicators not ready",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
+        }
 
       double learnerProb = m_learner.Score(features);
       double trend       = (*m_indicators).TrendScore(0);
@@ -764,6 +821,8 @@ public:
       if(dailyLossLeft<=0.0)
         {
          GuardianUtils::PrintDebug("Daily loss buffer exhausted",m_debug);
+         Diag_AddReason("Daily loss buffer exhausted",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
 
@@ -779,7 +838,14 @@ public:
       ComputeSignals(regime,learnerProb,trend,adx,squeeze,squeezeBreak,rsiH1,close,atrEwmaPts,
                      slPoints,tpPoints,longSignal,shortSignal);
 
-      if(!longSignal && !shortSignal) return;
+      signalAllowLong=longSignal;
+      signalAllowShort=shortSignal;
+
+      if(!longSignal && !shortSignal)
+        {
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
+         return;
+        }
 
       int direction = 0;
       if(longSignal && shortSignal) direction = (learnerProb>=0.5)?1:-1;
@@ -789,22 +855,35 @@ public:
       if((*m_positioning).HasOppositePosition(direction))
         {
          GuardianUtils::PrintDebug("Opposite position prevents hedge",m_debug);
+         Diag_AddReason("Opposite position prevents hedge",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
       if(m_maxPositionsPerSide>0 && (*m_positioning).ActiveDirectionCount(direction)>=m_maxPositionsPerSide)
         {
          GuardianUtils::PrintDebug("Max positions per side reached",m_debug);
+         Diag_AddReason("Max positions per side reached",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
 
       double lot = (*m_positioning).ComputeNextLot(atrBasePts,slPoints,atrEwmaPts,dailyLossLeft);
-      if(lot<=0.0) return;
+      if(lot<=0.0)
+        {
+         Diag_AddReason("Position sizing returned zero lot",true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
+         return;
+        }
 
       int digits = (int)SymbolInfoInteger(m_symbol,SYMBOL_DIGITS);
       double slUse = (slPoints>0.0)?slPoints:m_fixedSL;
       double tpUse = (tpPoints>0.0)?tpPoints:m_fixedTP;
 
+      Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
+
       bool executed=false;
+      uint lastRetcode=0;
+      string lastDesc="";
       for(int attempt=0;attempt<=m_maxRetries && !executed;++attempt)
         {
          if(direction>0)
@@ -815,6 +894,8 @@ public:
             if(!MarginCheck(ORDER_TYPE_BUY,lot,ask,sl))
               {
                GuardianUtils::PrintDebug("Margin check failed for buy",m_debug);
+               Diag_AddReason("Margin check failed for buy",true);
+               Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
                return;
               }
             executed = m_trade.Buy(lot,m_symbol,ask,sl,tp);
@@ -827,6 +908,8 @@ public:
             if(!MarginCheck(ORDER_TYPE_SELL,lot,bid,sl))
               {
                GuardianUtils::PrintDebug("Margin check failed for sell",m_debug);
+               Diag_AddReason("Margin check failed for sell",true);
+               Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
                return;
               }
             executed = m_trade.Sell(lot,m_symbol,bid,sl,tp);
@@ -834,24 +917,30 @@ public:
 
          if(!executed)
            {
-            uint retcode = m_trade.ResultRetcode();
-            if(retcode!=TRADE_RETCODE_REQUOTE && retcode!=TRADE_RETCODE_PRICE_CHANGED)
+            lastRetcode = m_trade.ResultRetcode();
+            lastDesc    = m_trade.ResultRetcodeDescription();
+            if(lastRetcode!=TRADE_RETCODE_REQUOTE && lastRetcode!=TRADE_RETCODE_PRICE_CHANGED)
                break; // do not retry on other errors
            }
         }
 
-      if(executed)
+      if(!executed)
         {
-         (*m_positioning).RegisterExecutedLot(lot);
-         (*m_risk).RegisterExecutedLot(lot);
-         if(m_analytics!=NULL)
-            (*m_analytics).SnapshotPositions();
-         RegisterTradeTimestamp(TimeCurrent());
-         GuardianUtils::AppendLog("orders.log",
-           StringFormat("%s %s %.2f",
-                        TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
-                        (direction>0)?"BUY":"SELL", lot));
+         if(lastRetcode!=0)
+            Diag_AddReason(StringFormat("Order failed ret=%u (%s)",lastRetcode,lastDesc),true);
+         Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
+         return;
         }
+
+      (*m_positioning).RegisterExecutedLot(lot);
+      (*m_risk).RegisterExecutedLot(lot);
+      if(m_analytics!=NULL)
+         (*m_analytics).SnapshotPositions();
+      RegisterTradeTimestamp(TimeCurrent());
+      GuardianUtils::AppendLog("orders.log",
+        StringFormat("%s %s %.2f",
+                     TimeToString(TimeCurrent(),TIME_DATE|TIME_SECONDS),
+                     (direction>0)?"BUY":"SELL", lot));
      }
 
    // --- Online learning + risk heartbeat on new bar

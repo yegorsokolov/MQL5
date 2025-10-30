@@ -16,6 +16,7 @@
 #include "modules/Trailing.mqh"
 #include "modules/Analytics.mqh"
 #include "modules/Strategy.mqh"
+#include "modules/Diagnostics.mqh"
 
 //==================================================================//
 //============================= INPUTS =============================//
@@ -120,6 +121,11 @@ input int    Inp_MinMinutesBetweenTrades  = 0;
 
 // diagnostics
 input bool   Inp_Debug                    = true;
+input bool   InpShowDiagnostics           = true;
+input int    InpDiagRefreshSec            = 1;
+input int    InpTargetSpreadPts           = 120;
+input bool   InpDisableNewsInTester       = true;
+input bool   InpEnableProbeOnce           = false;
 
 //==================================================================//
 //========================== GLOBAL STATE ==========================//
@@ -141,6 +147,10 @@ GuardianPersistedState g_state;
 int OnInit()
 {
    GuardianUtils::EnsurePaths();
+
+   Diag_Init("XAU_Guardian", (int)Inp_Magic);
+   Diag_SetInputs(InpShowDiagnostics, InpDiagRefreshSec, InpTargetSpreadPts,
+                  InpDisableNewsInTester, InpEnableProbeOnce);
 
    if(!GuardianStateStore::Load(g_state, GUARDIAN_FEATURE_COUNT))
       GuardianStateStore::Save(g_state);
@@ -258,6 +268,7 @@ int OnInit()
                        Inp_UseNewsCalendar,
                        Inp_ManualNewsFile,
                        Inp_NewsLookaheadMinutes,
+                       InpDisableNewsInTester,
                        Inp_MinBookVolume,
                        Inp_BookDepthLevels,
                        Inp_MaxPositionsPerSide,
@@ -289,6 +300,7 @@ void OnDeinit(const int reason)
    g_strategy.Shutdown();
    g_indicators.Shutdown();
    GuardianStateStore::Save(g_state);
+   Diag_OnDeinit();
 }
 
 //==================================================================//
@@ -296,16 +308,21 @@ void OnDeinit(const int reason)
 //==================================================================//
 void OnTick()
 {
+   bool riskBlocked=false;
    if(g_risk.CheckFloatingDDAndAct(g_trade))
-      return;
+      riskBlocked=true;
    if(g_risk.CheckDailyDDAndAct(g_trade))
-      return;
+      riskBlocked=true;
 
-   // trailing/exit management
-   g_strategy.ManagePositions(g_trade);
+   if(!riskBlocked)
+     {
+      // trailing/exit management
+      g_strategy.ManagePositions(g_trade);
+     }
 
    // entries (risk/session/news guards are inside)
-   g_strategy.TryEnter();
+   g_strategy.TryEnter(riskBlocked);
+   Diag_Draw();
 }
 
 //==================================================================//
