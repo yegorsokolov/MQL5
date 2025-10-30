@@ -20,16 +20,23 @@ private:
    enum Regime { REGIME_TREND=0, REGIME_MEAN=1 };
    enum RegimeMode { MODE_AUTO=0, MODE_TREND=1, MODE_MEAN=2 };
 
-   // --- Collaborators (objects, not pointers)
+   // --- Collaborators (bound via pointers to shared modules)
    string           m_symbol;
    int              m_magic;
    CTrade           m_trade;
-   RiskManager      m_risk;
-   Positioning      m_positioning;
-   IndicatorSuite   m_indicators;
-   OnlineLearner    m_learner;
-   TrailingManager  m_trailing;
-   Analytics        m_analytics;
+   RiskManager     *m_riskPtr;
+   Positioning     *m_positioningPtr;
+   IndicatorSuite  *m_indicatorsPtr;
+   OnlineLearner   *m_learnerPtr;
+   TrailingManager *m_trailingPtr;
+   Analytics       *m_analyticsPtr;
+   // convenience aliases to keep downstream code using dot-notation
+#define m_risk        (*m_riskPtr)
+#define m_positioning (*m_positioningPtr)
+#define m_indicators  (*m_indicatorsPtr)
+#define m_learner     (*m_learnerPtr)
+#define m_trailing    (*m_trailingPtr)
+#define m_analytics   (*m_analyticsPtr)
 
    // --- General inputs
    bool    m_debug;
@@ -467,12 +474,12 @@ public:
      : m_symbol(""),
        m_magic(0),
        m_trade(),
-       m_risk(),
-       m_positioning(),
-       m_indicators(),
-       m_learner(),
-       m_trailing(),
-       m_analytics(),
+       m_riskPtr(NULL),
+       m_positioningPtr(NULL),
+       m_indicatorsPtr(NULL),
+       m_learnerPtr(NULL),
+       m_trailingPtr(NULL),
+       m_analyticsPtr(NULL),
        m_debug(false),
        m_allowLongs(true),
        m_allowShorts(true),
@@ -556,14 +563,14 @@ public:
       m_symbol=symbol;
       m_magic=magic;
 
-      // copy collaborators into members
+      // bind collaborators into members
       m_trade       = trade;
-      m_risk        = risk;
-      m_positioning = positioning;
-      m_indicators  = indicators;
-      m_learner     = learner;
-      m_trailing    = trailing;
-      m_analytics   = analytics;
+      m_riskPtr        = &risk;
+      m_positioningPtr = &positioning;
+      m_indicatorsPtr  = &indicators;
+      m_learnerPtr     = &learner;
+      m_trailingPtr    = &trailing;
+      m_analyticsPtr   = &analytics;
 
       m_allowLongs=allowLongs;
       m_allowShorts=allowShorts;
@@ -648,6 +655,9 @@ public:
    // --- Manage open positions (trailing + flip guard)
    void ManagePositions(CTrade &trade_ref)
      {
+      if(m_indicatorsPtr==NULL || m_learnerPtr==NULL || m_positioningPtr==NULL || m_trailingPtr==NULL)
+         return;
+
       double features[];
       double learnerProb=0.5;
       double trend=0.0;
@@ -673,6 +683,9 @@ public:
    // --- Entry logic
    void TryEnter()
      {
+      if(m_riskPtr==NULL || m_positioningPtr==NULL || m_indicatorsPtr==NULL || m_learnerPtr==NULL)
+         return;
+
       if(m_risk.IsTradingBlocked())
         {
          GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug);
@@ -800,7 +813,8 @@ public:
         {
          m_positioning.RegisterExecutedLot(lot);
          m_risk.RegisterExecutedLot(lot);
-         m_analytics.SnapshotPositions();
+         if(m_analyticsPtr!=NULL)
+            m_analytics.SnapshotPositions();
          RegisterTradeTimestamp(TimeCurrent());
          GuardianUtils::AppendLog("orders.log",
            StringFormat("%s %s %.2f",
@@ -812,6 +826,9 @@ public:
    // --- Online learning + risk heartbeat on new bar
    void UpdateLearner()
      {
+      if(m_indicatorsPtr==NULL || m_learnerPtr==NULL || m_riskPtr==NULL)
+         return;
+
       datetime barTime = iTime(m_indicators.Symbol(), m_indicators.PrimaryTimeframe(), 0);
       if(barTime==0) return;
 
@@ -851,5 +868,12 @@ public:
          m_calendar.Shutdown();
      }
   };
+
+#undef m_risk
+#undef m_positioning
+#undef m_indicators
+#undef m_learner
+#undef m_trailing
+#undef m_analytics
 
 #endif // XAU_GUARDIAN_STRATEGY_MQH
