@@ -39,7 +39,7 @@ private:
       return MathSqrt(variance);
      }
 
-   void UpdateMoments(double &features[])
+   void UpdateMoments(const double &features[])
      {
       if(m_state==NULL)
          return;
@@ -57,11 +57,9 @@ private:
         }
      }
 
-   void PrepareScaled(double &features[],double &scaled[],const bool updateStats)
+   void ScaleFeatures(const double &features[],double &scaled[]) const
      {
       ArrayResize(scaled,m_featureCount);
-      if(updateStats)
-         UpdateMoments(features);
       for(int i=0;i<m_featureCount;++i)
         {
          double mean=(m_state!=NULL)?(*m_state).feature_means[i]:0.0;
@@ -71,6 +69,13 @@ private:
          else
             scaled[i]=(features[i]-mean)/std;
         }
+     }
+
+   void PrepareScaled(const double &features[],double &scaled[],const bool updateStats)
+     {
+      if(updateStats)
+         UpdateMoments(features);
+      ScaleFeatures(features,scaled);
      }
 
    void TakeSnapshot()
@@ -134,21 +139,19 @@ public:
       return true;
      }
 
-   double Score(double &features[]) const
+   double Score(const double &features[]) const
      {
       if(m_state==NULL)
          return 0.5;
       double scaled[];
-      // Copy to allow const method to reuse scaling without state updates
-      OnlineLearner *self=(OnlineLearner*)this;
-      self->PrepareScaled(features,scaled,false);
+      ScaleFeatures(features,scaled);
       double sum=(*m_state).bias;
       for(int i=0;i<m_featureCount;++i)
          sum+=(*m_state).weights[i]*scaled[i];
       return Sigmoid(sum);
      }
 
-   void Update(double &features[],const double label)
+   void Update(const double &features[],const double label)
      {
       if(m_state==NULL || m_baseLearnRate<=0.0)
          return;

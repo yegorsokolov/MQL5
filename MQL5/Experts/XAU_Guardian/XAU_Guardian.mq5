@@ -134,7 +134,7 @@ int OnInit()
       g_learner.Init(g_state,GUARDIAN_FEATURE_COUNT,0.0,false,0.0,0.0,0);
    g_analytics.Init(_Symbol,Inp_Magic,Inp_DebugLogs);
 
-   g_strategy.Init(_Symbol,g_trade,g_risk,g_positioning,g_indicators,g_learner,g_trailing,g_analytics,
+   g_strategy.Init(_Symbol,Inp_Magic,g_trade,g_risk,g_positioning,g_indicators,g_learner,g_trailing,g_analytics,
                    Inp_AllowLongs,Inp_AllowShorts,Inp_TP_Points,Inp_SL_Points,Inp_TrailStartPoints,
                    Inp_TrailStepPoints,Inp_MinTrendScore,Inp_MinADX,Inp_RSI_Long,Inp_RSI_Short,
                    Inp_SpreadLimit,Inp_MinLearnerProb,Inp_NightBlock,Inp_NightStartHour,Inp_NightEndHour,

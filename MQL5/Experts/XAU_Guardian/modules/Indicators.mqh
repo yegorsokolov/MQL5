@@ -77,7 +77,7 @@ public:
       m_handleTVF=iCustom(symbol,tf1,"XAU_TVF");
       m_handleSqueeze=iCustom(symbol,tf1,"XAU_Squeeze");
       m_handleMFI=iMFI(symbol,tf1,14,VOLUME_TICK);
-      m_handleOBV=iOBV(symbol,tf1,PRICE_CLOSE,VOLUME_TICK);
+      m_handleOBV=iOBV(symbol,tf1,VOLUME_TICK);
       bool ok=(m_handleATR!=INVALID_HANDLE && m_handleATRKeltner!=INVALID_HANDLE &&
                m_handleRSI1!=INVALID_HANDLE && m_handleRSI2!=INVALID_HANDLE && m_handleRSI3!=INVALID_HANDLE &&
                m_handleCCI!=INVALID_HANDLE && m_handleADX!=INVALID_HANDLE && m_handleBands!=INVALID_HANDLE &&
@@ -113,21 +113,21 @@ public:
       ArrayResize(features,GUARDIAN_FEATURE_COUNT);
       ArrayInitialize(features,0.0);
 
-      double atrBuf[10];
-      double rsi1[10];
-      double rsi2[10];
-      double rsi3[10];
-      double cci[10];
-      double adx[10];
-      double maFast[10];
-      double maSlow[10];
-      double upper[10];
-      double middle[10];
-      double lower[10];
-      double tvfTrend[10];
-      double tvfVol[10];
-      double sqState[10];
-      double sqBreak[10];
+      double atrBuf[];
+      double rsi1[];
+      double rsi2[];
+      double rsi3[];
+      double cci[];
+      double adx[];
+      double maFast[];
+      double maSlow[];
+      double upper[];
+      double middle[];
+      double lower[];
+      double tvfTrend[];
+      double tvfVol[];
+      double sqState[];
+      double sqBreak[];
 
       if(!Copy(m_handleATR,0,shift+2,atrBuf)) return false;
       if(!Copy(m_handleRSI1,0,shift+2,rsi1)) return false;
@@ -145,7 +145,7 @@ public:
       if(CopyBuffer(m_handleSqueeze,0,0,shift+2,sqState)<shift+2) return false;
       if(CopyBuffer(m_handleSqueeze,1,0,shift+2,sqBreak)<shift+2) return false;
 
-      double priceClose[10];
+      double priceClose[];
       ArraySetAsSeries(priceClose,true);
       if(CopyClose(m_symbol,m_tf1,0,shift+2,priceClose)<shift+2)
          return false;
