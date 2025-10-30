@@ -82,7 +82,7 @@ public:
            {
             if(m_levels==0 || bidLevels<m_levels)
               {
-               bidVolume+=book[i].volume;
+               bidVolume+=(double)book[i].volume;
                bidLevels++;
               }
            }
@@ -90,7 +90,7 @@ public:
            {
             if(m_levels==0 || askLevels<m_levels)
               {
-               askVolume+=book[i].volume;
+               askVolume+=(double)book[i].volume;
                askLevels++;
               }
            }
