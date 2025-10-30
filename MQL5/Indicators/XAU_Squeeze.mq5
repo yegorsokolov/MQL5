@@ -42,7 +42,7 @@ int OnInit()
    PlotIndexSetInteger(0,PLOT_DRAW_BEGIN,InpBollPeriod);
    PlotIndexSetInteger(1,PLOT_DRAW_BEGIN,InpBollPeriod);
    IndicatorSetString(INDICATOR_SHORTNAME,"XAU_Squeeze");
-   handleBands=iBands(_Symbol,_Period,InpBollPeriod,InpBollDev,0,PRICE_CLOSE);
+   handleBands=iBands(_Symbol,_Period,InpBollPeriod,0,InpBollDev,PRICE_CLOSE);
    handleATR=iATR(_Symbol,_Period,InpKeltPeriod);
    handleMA=iMA(_Symbol,_Period,InpMomentumPeriod,0,MODE_EMA,PRICE_CLOSE);
    if(handleBands==INVALID_HANDLE || handleATR==INVALID_HANDLE || handleMA==INVALID_HANDLE)

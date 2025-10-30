@@ -468,7 +468,7 @@ public:
 
    ENUM_TIMEFRAMES PrimaryTimeframe() const { return m_tf1; }
    ENUM_TIMEFRAMES SecondaryTimeframe() const { return m_tf2; }
-   const string &Symbol() const { return m_symbol; }
+   string Symbol() const { return m_symbol; }
   };
 
 #endif // XAU_GUARDIAN_INDICATORS_MQH
