@@ -742,6 +742,8 @@ public:
      {
       Diag_Reset();
 
+      const int ENTRY_LOG_THROTTLE_SEC=60;
+
       bool signalAllowLong=false;
       bool signalAllowShort=false;
 
@@ -763,14 +765,14 @@ public:
 
       if(!rmUnlocked)
         {
-         GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug);
+         GuardianUtils::PrintDebug("Entry blocked by risk manager",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
 
       if(timeBlocked)
         {
-         GuardianUtils::PrintDebug("Entry blocked by session/news filter",m_debug);
+         GuardianUtils::PrintDebug("Entry blocked by session/news filter",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
@@ -778,14 +780,14 @@ public:
       double spread=0.0;
       if(!m_liquidityFilter.IsSpreadAcceptable(spread))
         {
-         GuardianUtils::PrintDebug("Spread too high: "+DoubleToString(spread,1),m_debug);
+         GuardianUtils::PrintDebug("Spread too high: "+DoubleToString(spread,1),m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_AddReason(StringFormat("Spread %.1f exceeds filter",spread),true);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
       if(!m_liquidityFilter.IsLiquidityAcceptable())
         {
-         GuardianUtils::PrintDebug("Liquidity filter blocked entry",m_debug);
+         GuardianUtils::PrintDebug("Liquidity filter blocked entry",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_AddReason("Liquidity filter blocked entry",true);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
@@ -794,7 +796,7 @@ public:
       datetime now=TimeCurrent();
       if(!TradeDensityAllows(now))
         {
-         GuardianUtils::PrintDebug("Trade density guard active",m_debug);
+         GuardianUtils::PrintDebug("Trade density guard active",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_AddReason("Trade density guard active",true);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
@@ -820,7 +822,7 @@ public:
       double dailyLossLeft = (*m_risk).DailyLossLeftAmount();
       if(dailyLossLeft<=0.0)
         {
-         GuardianUtils::PrintDebug("Daily loss buffer exhausted",m_debug);
+         GuardianUtils::PrintDebug("Daily loss buffer exhausted",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_AddReason("Daily loss buffer exhausted",true);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
@@ -854,14 +856,14 @@ public:
 
       if((*m_positioning).HasOppositePosition(direction))
         {
-         GuardianUtils::PrintDebug("Opposite position prevents hedge",m_debug);
+         GuardianUtils::PrintDebug("Opposite position prevents hedge",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_AddReason("Opposite position prevents hedge",true);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
       if(m_maxPositionsPerSide>0 && (*m_positioning).ActiveDirectionCount(direction)>=m_maxPositionsPerSide)
         {
-         GuardianUtils::PrintDebug("Max positions per side reached",m_debug);
+         GuardianUtils::PrintDebug("Max positions per side reached",m_debug,ENTRY_LOG_THROTTLE_SEC);
          Diag_AddReason("Max positions per side reached",true);
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
@@ -893,7 +895,7 @@ public:
             double tp = NormalizeDouble(ask + tpUse*point, digits);
             if(!MarginCheck(ORDER_TYPE_BUY,lot,ask,sl))
               {
-               GuardianUtils::PrintDebug("Margin check failed for buy",m_debug);
+               GuardianUtils::PrintDebug("Margin check failed for buy",m_debug,ENTRY_LOG_THROTTLE_SEC);
                Diag_AddReason("Margin check failed for buy",true);
                Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
                return;
@@ -907,7 +909,7 @@ public:
             double tp = NormalizeDouble(bid - tpUse*point, digits);
             if(!MarginCheck(ORDER_TYPE_SELL,lot,bid,sl))
               {
-               GuardianUtils::PrintDebug("Margin check failed for sell",m_debug);
+               GuardianUtils::PrintDebug("Margin check failed for sell",m_debug,ENTRY_LOG_THROTTLE_SEC);
                Diag_AddReason("Margin check failed for sell",true);
                Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
                return;
