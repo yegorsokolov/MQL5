@@ -69,10 +69,42 @@ public:
       Print("[XAU_Guardian] "+text);
      }
 
-   static void PrintDebug(const string text,const bool enabled)
+   static void PrintDebug(const string text,const bool enabled,const int throttleSeconds=0)
      {
-      if(enabled)
-         Print("[XAU_Guardian][DBG] "+text);
+      if(!enabled)
+         return;
+
+      if(throttleSeconds>0)
+        {
+         static string   lastMessages[];
+         static datetime lastTimestamps[];
+
+         int index=-1;
+         for(int i=0;i<ArraySize(lastMessages);++i)
+            if(lastMessages[i]==text)
+              {
+               index=i;
+               break;
+              }
+
+         datetime now=TimeCurrent();
+         if(index>=0)
+           {
+            if(now-lastTimestamps[index]<throttleSeconds)
+               return;
+            lastTimestamps[index]=now;
+           }
+         else
+           {
+            index=ArraySize(lastMessages);
+            ArrayResize(lastMessages,index+1);
+            ArrayResize(lastTimestamps,index+1);
+            lastMessages[index]=text;
+            lastTimestamps[index]=now;
+           }
+        }
+
+      Print("[XAU_Guardian][DBG] "+text);
      }
 
    static bool AppendLog(const string filename,const string line)
