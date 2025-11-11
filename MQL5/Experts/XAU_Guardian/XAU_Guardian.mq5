@@ -27,8 +27,8 @@ input int    Inp_SpreadMode        = SPREAD_FIXED; // 0=fixed, 1=MA multiple
 input bool   Inp_AutoStopPad       = true;
 input int    Inp_MinSLPts          = 600;
 
-MarketGuards* gmk;
-MarketGuards* gguards = gmk;
+MarketGuards* gmk = NULL;
+MarketGuards* gguards = NULL;
 
 //==================================================================//
 //============================= INPUTS =============================//
@@ -159,15 +159,19 @@ GuardianPersistedState g_state;
 int OnInit()
 {
 
-   gmk = MarketGuards(_Symbol);
-   gmk.InpSpreadLimitPts = Inp_SpreadLimitPts;
-   gmk.InpSpreadLookback = Inp_SpreadLookbackSec;
-   gmk.InpSpreadMult     = Inp_SpreadMult;
-   gmk.InpSpreadMode    = Inp_SpreadMode;
-   gmk.InpAutoStopPad    = Inp_AutoStopPad;
-   gmk.InpMinSLPts       = Inp_MinSLPts;
-   gmk.RefreshSymbolCaps();
-   gmk.DumpSymbolCaps();
+   if(gmk!=NULL)
+      delete gmk;
+   gmk = new MarketGuards(_Symbol);
+   gguards = gmk;
+
+   gmk->InpSpreadLimitPts = Inp_SpreadLimitPts;
+   gmk->InpSpreadLookback = Inp_SpreadLookbackSec;
+   gmk->InpSpreadMult     = Inp_SpreadMult;
+   gmk->InpSpreadMode     = Inp_SpreadMode;
+   gmk->InpAutoStopPad    = Inp_AutoStopPad;
+   gmk->InpMinSLPts       = Inp_MinSLPts;
+   gmk->RefreshSymbolCaps();
+   gmk->DumpSymbolCaps();
 
    GuardianUtils::EnsurePaths();
 
@@ -324,6 +328,13 @@ void OnDeinit(const int reason)
    g_indicators.Shutdown();
    GuardianStateStore::Save(g_state);
    Diag_OnDeinit();
+
+   if(gmk!=NULL)
+   {
+      delete gmk;
+      gmk = NULL;
+      gguards = NULL;
+   }
 }
 
 //==================================================================//
@@ -332,11 +343,12 @@ void OnDeinit(const int reason)
 void OnTick()
 {
 
-   gmk.OnTickUpdate();
+   if(gmk!=NULL)
+      gmk->OnTickUpdate();
    
    // hard spread gate (so TryEnter isn’t even called if spread is insane)
    string why="";
-   if(!gmk.SpreadOK(why)) {
+   if(gmk!=NULL && !gmk->SpreadOK(why)) {
      if(Inp_Debug) Print("[BLOCK] SPREAD ", why);
      Diag_Draw();
      return;
