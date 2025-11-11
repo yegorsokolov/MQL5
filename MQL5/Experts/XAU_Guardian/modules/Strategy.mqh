@@ -13,6 +13,7 @@
 #include "Diagnostics.mqh"
 #include "news/calendar_native.mqh"
 #include "filters/liquidity_spread.mqh"
+#include "GuardsBridge.mqh"
 
 class OnlineLearnerHandle
   {
@@ -792,6 +793,15 @@ public:
          Diag_Collect(signalAllowLong,signalAllowShort,rmUnlocked,newsOk,hoursOk);
          return;
         }
+
+      string gwhy = "";
+      if (gguards != NULL && !(*gguards).SpreadOK(gwhy))
+      {
+         GuardianUtils::PrintDebug("Guard blocked by spread: " + gwhy, m_debug, ENTRY_LOG_THROTTLE_SEC);
+         Diag_AddReason("Guard spread: " + gwhy, true);
+         Diag_Collect(signalAllowLong, signalAllowShort, rmUnlocked, newsOk, hoursOk);
+         return;
+      }
 
       datetime now=TimeCurrent();
       if(!TradeDensityAllows(now))
