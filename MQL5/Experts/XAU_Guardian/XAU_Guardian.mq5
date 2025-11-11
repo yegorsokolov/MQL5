@@ -17,6 +17,18 @@
 #include "modules/Analytics.mqh"
 #include "modules/Strategy.mqh"
 #include "modules/Diagnostics.mqh"
+#include "modules/MarketGuards.mqh"
+#include "modules/GuardsBridge.mqh"
+
+input int    Inp_SpreadLimitPts    = 1200;
+input int    Inp_SpreadLookbackSec = 120;
+input double Inp_SpreadMult        = 1.8;
+input int    Inp_SpreadMode        = SPREAD_FIXED; // 0=fixed, 1=MA multiple
+input bool   Inp_AutoStopPad       = true;
+input int    Inp_MinSLPts          = 600;
+
+MarketGuards* gmk;
+MarketGuards* gguards = gmk;
 
 //==================================================================//
 //============================= INPUTS =============================//
@@ -146,6 +158,17 @@ GuardianPersistedState g_state;
 //==================================================================//
 int OnInit()
 {
+
+   gmk = MarketGuards(_Symbol);
+   gmk.InpSpreadLimitPts = Inp_SpreadLimitPts;
+   gmk.InpSpreadLookback = Inp_SpreadLookbackSec;
+   gmk.InpSpreadMult     = Inp_SpreadMult;
+   gmk.InpSpreadMode    = Inp_SpreadMode;
+   gmk.InpAutoStopPad    = Inp_AutoStopPad;
+   gmk.InpMinSLPts       = Inp_MinSLPts;
+   gmk.RefreshSymbolCaps();
+   gmk.DumpSymbolCaps();
+
    GuardianUtils::EnsurePaths();
 
    Diag_Init("XAU_Guardian", (int)Inp_Magic);
@@ -308,6 +331,17 @@ void OnDeinit(const int reason)
 //==================================================================//
 void OnTick()
 {
+
+   gmk.OnTickUpdate();
+   
+   // hard spread gate (so TryEnter isn’t even called if spread is insane)
+   string why="";
+   if(!gmk.SpreadOK(why)) {
+     if(Inp_Debug) Print("[BLOCK] SPREAD ", why);
+     Diag_Draw();
+     return;
+   }
+
    bool riskBlocked=false;
    if(g_risk.CheckFloatingDDAndAct(g_trade))
       riskBlocked=true;
